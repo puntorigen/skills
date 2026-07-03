@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>video-to-splat preview</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; color: #ddd;
+        font-family: system-ui, sans-serif; }
+      #app { position: fixed; inset: 0; }
+      #hud { position: fixed; left: 12px; top: 12px; z-index: 10; font-size: 12px;
+        background: rgba(0,0,0,.55); padding: 6px 10px; border-radius: 6px; }
+      #err { position: fixed; inset: 0; display: none; place-items: center;
+        text-align: center; padding: 2rem; }
+      #err code { color: #ffb4b4; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="hud">loading splat...</div>
+    <div id="err">
+      <div>
+        <h2>Could not render the splat</h2>
+        <p id="errmsg"></p>
+        <p>This viewer needs <b>Chrome or Edge 134+</b> (WebGPU). Safari/Firefox are not yet supported.</p>
+      </div>
+    </div>
+    <script type="module" src="/index.ts"></script>
+  </body>
+</html>

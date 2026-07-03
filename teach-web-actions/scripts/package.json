@@ -1,0 +1,9 @@
+{
+  "name": "teach-web-actions-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright codegen recorder + video replay runner for the teach-web-actions skill.",
+  "dependencies": {
+    "playwright": "^1.61.0"
+  }
+}

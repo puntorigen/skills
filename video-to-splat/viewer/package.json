@@ -1,0 +1,19 @@
+{
+  "name": "video-to-splat-viewer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Minimal Aholo viewer to preview a local Gaussian splat produced by the video-to-splat skill.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@manycore/aholo-viewer": "^1.5.1"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vite": "^8.1.3"
+  }
+}

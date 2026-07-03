@@ -1,0 +1,46 @@
+# Dependencies (installed on first run by setup scripts)
+node_modules/
+.pnpm-store/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.eggs/
+
+# Secrets & local config
+.env
+.env.*
+config.json
+*.key
+
+# Sensitive web-session artifacts (lessons live in ~/.web-lessons/)
+*.har
+
+# Generated media & model outputs
+*.mp4
+*.webm
+*.mp3
+*.wav
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.ply
+*.sog
+*.spz
+
+# OS & editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Build output
+dist/
+build/
+.vite/

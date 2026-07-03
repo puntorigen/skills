@@ -1,0 +1,23 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "groupings": [
+    {
+      "title": "Local media pipeline",
+      "description": "Generate images, voiceovers, music, and talking-head video entirely on-device — no cloud APIs.",
+      "skills": [
+        "image-gen",
+        "voice-clone-narration",
+        "bg-music",
+        "talking-head"
+      ]
+    },
+    {
+      "title": "3D & web automation",
+      "description": "Turn video into 3D Gaussian splats, or teach the agent how a website works by recording sessions.",
+      "skills": [
+        "video-to-splat",
+        "teach-web-actions"
+      ]
+    }
+  ]
+}
