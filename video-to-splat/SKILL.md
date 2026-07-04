@@ -175,6 +175,10 @@ For multi-story tours or when the user wants a map of the space:
 - Renders a top-down **floorplan PNG per floor** (`analysis/floorplan-f<N>.png`):
   wall-point density in blue/white, the camera walk path in orange, green circle
   at the path start. Machine-readable summary in `analysis/floors.json`.
+- The analysis also **powers the preview viewer's navigation** (step 7): the
+  minimap, floor switcher, and gravity-aligned walking all read
+  `analysis/floors.json` - run this step before preview.sh for the best
+  walkthrough experience, even on single-floor scenes.
 - **Shattered reconstruction?** run_colmap.py keeps every sub-model
   (`sparse/0`, `sparse/1`, ..., largest first). Fast tours usually break at the
   stairs, so each island IS roughly one floor - analyze each with `--model N`
@@ -244,16 +248,26 @@ bash "$SKILL_DIR/scripts/convert_splat.sh" my-tour --spz      # also emit .spz
 bash "$SKILL_DIR/scripts/preview.sh" my-tour                  # opens Chrome/Edge
 ```
 
-Starts a local Vite server with the bundled Aholo viewer (orbit: drag, pan:
-shift/right-drag, zoom: wheel, reset: R). The camera starts at a real mid-tour
+Starts a local Vite server with the bundled Aholo viewer, driven like a
+building walkthrough: **WASD/arrow keys walk** (arrows left/right turn, A/D
+strafe, shift runs), **drag looks around**, wheel moves forward/back, Q/E moves
+down/up, R resets to the start pose. The camera starts at a real mid-tour
 capture pose read from the COLMAP model - an indoor splat viewed from an
-arbitrary outside viewpoint shows only wall-backs and looks broken. If the view
-is black, don't assume the splat is bad: see the black-preview entry in
-REFERENCE.md troubleshooting (near-plane and camera-pose gotchas live there).
-Deliverables live under `~/.video-to-splat/projects/my-tour/`: `splat.ply`
-(master), `splat.sog` (web), and the COLMAP model. To use in a real Aholo app,
-load the `.sog` with `SplatLoader.parseSplatData(SplatFileType.SOG, url)` - see
-REFERENCE.md.
+arbitrary outside viewpoint shows only wall-backs and looks broken.
+
+**Run `analyze_scene.py` (step 3b) before previewing** to unlock the
+navigation aids: a minimap of the active floor in the corner (live camera
+marker + view cone; click anywhere on it to teleport there), floor buttons /
+number keys to jump between stories, and gravity-aligned walking (without the
+analysis the viewer guesses "up" and walking can feel tilted). preview.sh picks
+this up automatically from `analysis/floors.json`.
+
+If the view is black, don't assume the splat is bad: see the black-preview
+entry in REFERENCE.md troubleshooting (near-plane and camera-pose gotchas live
+there). Deliverables live under `~/.video-to-splat/projects/my-tour/`:
+`splat.ply` (master), `splat.sog` (web), and the COLMAP model. To use in a real
+Aholo app, load the `.sog` with
+`SplatLoader.parseSplatData(SplatFileType.SOG, url)` - see REFERENCE.md.
 
 ## Capture guidance (the #1 quality lever)
 

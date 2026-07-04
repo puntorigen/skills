@@ -185,7 +185,42 @@ viewer.getScene().add(splat);
 ```
 
 Splats here follow the OpenCV convention (`-Y` up); the bundled viewer sets
-`camera.up.set(0, -1, 0)` accordingly.
+`camera.up` accordingly (see below).
+
+## Bundled viewer navigation (viewer/index.ts)
+
+The Aholo SDK ships rendering only - camera *controls* exist only in their
+website harness - so the bundled viewer implements a first-person walkthrough
+controller against the public `PerspectiveCamera` API (position/up/lookAt):
+
+- **Controls**: WASD/arrows walk (left/right arrows turn, A/D strafe, shift
+  runs at 2.6x), drag looks around (grab-the-world), wheel moves along the view
+  direction, Q/E moves down/up, R returns to the start pose, number keys jump
+  floors, clicking the minimap teleports.
+- **World frame**: walking happens in the horizontal plane of the scene's
+  gravity vector. preview.sh embeds it in `scene.json` under `nav` (from
+  `analysis/floors.json`); without it the viewer assumes the OpenCV `-Y` up,
+  which is usually a few degrees off - run analyze_scene.py for level walking.
+  The controller handles any frame handedness (yaw direction is derived from
+  `sign(dot(cross(e1, e2), up))`).
+- **Speed scale**: SfM units are arbitrary, so walk speed is calibrated from
+  the analysis' `eye_height` (~1.5 m real) - ~1.4 eye heights per second.
+- **Minimap**: shows the active floor's floorplan PNG. analyze_scene.py exports
+  a `plan_transform` per floor (`px = (plan_xy - origin_xy) * px_per_unit +
+  offset_px`, where `plan_xy = [p . plan_x, p . plan_y]` and `plan_x/plan_y`
+  are world 3-vectors in floors.json) - the viewer uses it forward to draw the
+  live camera marker/view cone and inverted for click-to-teleport. The active
+  floor follows the camera height (nearest floor `level`); floor `level` is a
+  *camera-height* cluster, i.e. already eye level - teleports go to `level`,
+  not `level + eye`.
+- **Floor jumps** use the per-floor `camera` capture pose from floors.json
+  (median-in-time frame on that floor), guaranteeing the landing spot is a
+  real interior viewpoint.
+- **scene.json schema** (written by preview.sh): `{ file, type,
+  camera?: {position, forward}, nav?: { up, plan_x, plan_y, eye_height,
+  floors: [{index, level, plan, plan_transform, camera}] } }`. Floorplan PNGs
+  are copied to `public/plan-f<N>.png`. Only `sparse/0`'s analysis is embedded -
+  other sub-models live in different coordinate frames than the trained splat.
 
 Note: Aholo's own `splat-transform` tool (referenced in their docs) is proprietary
 and not redistributable, so this skill uses the open-source PlayCanvas
@@ -281,9 +316,11 @@ NVIDIA box is mostly a per-stage swap:
   can be unavailable in some environments; CPU is slower but always works).
 - **Blank/black preview** - use Chrome/Edge 134+ (WebGPU). Check the on-screen
   error and the devtools console; try `?url=/scene.sog` explicitly. If the scene
-  is off-camera, press `R` to reset, then zoom out with the wheel. Two
-  hard-earned gotchas baked into the bundled viewer: (1) Aholo's default camera
-  has `near=100` (mm-scale scenes), which clips an entire COLMAP-scale scene to
-  black - the viewer resets it to 0.05; (2) an indoor splat viewed from an
-  arbitrary *outside* viewpoint shows only wall-backs and floaters - preview.sh
-  starts the camera at a real mid-tour capture pose from `sparse/0`.
+  is off-camera, press `R` to reset. Two hard-earned gotchas baked into the
+  bundled viewer: (1) Aholo's default camera has `near=100` (mm-scale scenes),
+  which clips an entire COLMAP-scale scene to black - the viewer resets it to
+  0.05; (2) an indoor splat viewed from an arbitrary *outside* viewpoint shows
+  only wall-backs and floaters - preview.sh starts the camera at a real
+  mid-tour capture pose from `sparse/0`.
+- **Walking feels tilted / minimap missing** - the preview was started without
+  `analysis/floors.json`. Run analyze_scene.py, then restart preview.sh.

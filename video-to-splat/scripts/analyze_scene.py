@@ -207,7 +207,9 @@ def assign_floors(heights, levels, tol):
 # floorplan rendering (PIL, no matplotlib)
 # --------------------------------------------------------------------------- #
 def render_floorplan(path, wall_xy, cam_xy, cam_floor_mask, size=1200, pad=0.06):
-    """Density map of wall points (log-scaled) + camera path for this floor."""
+    """Density map of wall points (log-scaled) + camera path for this floor.
+    Returns the plan-xy -> pixel transform so viewers can overlay live markers:
+    px = (xy - lo) * scale + off."""
     from PIL import Image, ImageDraw
 
     all_xy = wall_xy if len(wall_xy) else cam_xy
@@ -215,11 +217,10 @@ def render_floorplan(path, wall_xy, cam_xy, cam_floor_mask, size=1200, pad=0.06)
     hi = all_xy.max(axis=0)
     span = np.maximum(hi - lo, 1e-9)
     scale = (1 - 2 * pad) * size / span.max()
+    off = (size - span * scale) / 2
 
     def to_px(xy):
-        p = (xy - lo) * scale
-        off = (size - span * scale) / 2
-        return p + off
+        return (xy - lo) * scale + off
 
     # 2D histogram of wall points
     img = Image.new("RGB", (size, size), (17, 17, 20))
@@ -265,6 +266,10 @@ def render_floorplan(path, wall_xy, cam_xy, cam_floor_mask, size=1200, pad=0.06)
             draw.ellipse([x - 7, y - 7, x + 7, y + 7],
                          outline=(90, 255, 120), width=3)
     img.save(path)
+    return {"origin_xy": [float(lo[0]), float(lo[1])],
+            "px_per_unit": float(scale),
+            "offset_px": [float(off[0]), float(off[1])],
+            "size_px": size}
 
 
 def main(argv=None):
@@ -298,15 +303,17 @@ def main(argv=None):
     images = sorted(rec.images.values(), key=lambda im: im.name)
     if len(images) < 10:
         fail(f"only {len(images)} registered images; not enough for analysis")
-    centers, ups, names = [], [], []
+    centers, ups, fwds, names = [], [], [], []
     for im in images:
         cfw = call_or_get(im, "cam_from_world")
         r_wc = np.asarray(cfw.rotation.matrix()).T
         centers.append(np.asarray(call_or_get(im, "projection_center"), dtype=float))
         ups.append(-r_wc[:, 1])  # camera -y axis in world = "up" of an upright phone
+        fwds.append(r_wc[:, 2])  # camera +z axis in world = look direction
         names.append(im.name)
     centers = np.vstack(centers)
     ups = np.vstack(ups)
+    fwds = np.vstack(fwds)
 
     pts = np.array([p3.xyz for p3 in rec.points3D.values()
                     if p3.track.length() >= args.min_track], dtype=float)
@@ -328,6 +335,7 @@ def main(argv=None):
     pts_xy = pts @ np.vstack([e1, e2]).T if len(pts) else np.zeros((0, 2))
     cams_xy = centers @ np.vstack([e1, e2]).T
     cams_h = centers @ up
+    rot = np.eye(2)
     if len(pts_xy) > 200:
         c = pts_xy - pts_xy.mean(axis=0)
         cov = c.T @ c
@@ -335,6 +343,9 @@ def main(argv=None):
         rot = v[:, ::-1].T  # principal axis -> x
         pts_xy = pts_xy @ rot.T
         cams_xy = cams_xy @ rot.T
+    # world 3-vectors of the final plan axes: plan_x = P . ex, plan_y = P . ey
+    ex = rot[0, 0] * e1 + rot[0, 1] * e2
+    ey = rot[1, 0] * e1 + rot[1, 1] * e2
 
     # scale calibration: the camera's eye height above the local floor is the
     # one known quantity of a walking tour (~1.5 m). Real stories are ~1.7-2x
@@ -366,7 +377,7 @@ def main(argv=None):
     outdir.mkdir(exist_ok=True)
     tag = "" if args.model == 0 else f"-m{args.model}"
 
-    plans = []
+    plans, transforms, poses = [], [], []
     for i, lv in enumerate(levels):
         # wall band around eye level: floor slab is ~1 eye height below the
         # camera, the ceiling ~0.6 above; keep the middle slice = walls
@@ -375,13 +386,26 @@ def main(argv=None):
         wall_xy = pts_xy[sel] if len(pts) else np.zeros((0, 2))
         mask = floor_idx == i
         plan = outdir / f"floorplan{tag}-f{i + 1}.png"
-        render_floorplan(plan, wall_xy, cams_xy, mask, size=args.plan_size)
+        transforms.append(render_floorplan(plan, wall_xy, cams_xy, mask,
+                                           size=args.plan_size))
         plans.append(str(plan))
+        # representative capture pose: the median-in-time frame on this floor
+        on = np.flatnonzero(mask)
+        if len(on):
+            j = int(on[len(on) // 2])
+            poses.append({"position": [round(float(v), 5) for v in centers[j]],
+                          "forward": [round(float(v), 5) for v in fwds[j]]})
+        else:
+            poses.append(None)
         eprint(f"[analyze] wrote {plan.name}  ({int(sel.sum())} wall points)")
 
     (outdir / f"floors{tag}.json").write_text(json.dumps({
         "project": str(project),
         "up": [float(x) for x in up],
+        # world-space axes of the floorplan image: px_x grows along plan_x,
+        # px_y along plan_y. plan_xy(world p) = [p . plan_x, p . plan_y]
+        "plan_x": [float(x) for x in ex],
+        "plan_y": [float(x) for x in ey],
         "n_registered": len(images),
         "n_points": int(len(pts)),
         "eye_height_scene_units": eye,
@@ -391,6 +415,8 @@ def main(argv=None):
             "level": float(lv),
             "frames": int((floor_idx == i).sum()),
             "floorplan": plans[i],
+            "plan_transform": transforms[i],
+            "camera": poses[i],
         } for i, lv in enumerate(levels)],
         "transition_frames": n_trans,
         "frames": [{"name": names[i],

@@ -65,34 +65,78 @@ mkdir -p "$VIEWER_DIR/public"
 rm -f "$VIEWER_DIR/public/scene."{sog,spz,ply} 2>/dev/null || true
 cp "$SPLAT" "$VIEWER_DIR/public/scene.$ext"
 
-# starting camera: use a real capture pose from the COLMAP model when available
-# (an indoor splat looks black/noisy from an arbitrary outside viewpoint)
-CAMERA_JSON=""
+# scene.json: starting camera from a real capture pose (an indoor splat looks
+# black/noisy from an arbitrary outside viewpoint) + navigation metadata from
+# analyze_scene.py when available (up vector, floors, minimap floorplans)
 PROJ_DIR="$(dirname "$SPLAT")"
 PYBIN="$VTS_HOME/.venv/bin/python"
-if [[ -d "$PROJ_DIR/sparse/0" && -x "$PYBIN" ]]; then
-  CAMERA_JSON="$("$PYBIN" - "$PROJ_DIR/sparse/0" <<'PY' 2>/dev/null || true
-import json, sys
-import numpy as np
-import pycolmap
-rec = pycolmap.Reconstruction(sys.argv[1])
-images = sorted(rec.images.values(), key=lambda im: im.name)
-im = images[len(images) // 2]          # mid-tour view: well inside the scene
-cfw = im.cam_from_world() if callable(im.cam_from_world) else im.cam_from_world
-R_wc = np.asarray(cfw.rotation.matrix()).T
-pos = np.asarray(im.projection_center(), dtype=float)
-fwd = R_wc[:, 2]                       # camera +Z (look direction) in world
-print(json.dumps({"position": [round(float(v), 5) for v in pos],
-                  "forward": [round(float(v), 5) for v in fwd]}))
+rm -f "$VIEWER_DIR/public/plan-f"*.png 2>/dev/null || true
+SCENE_JSON=""
+if [[ -x "$PYBIN" ]]; then
+  SCENE_JSON="$("$PYBIN" - "$PROJ_DIR" "$VIEWER_DIR/public" "/scene.$ext" "$TYPE" <<'PY' 2>/dev/null || true
+import json, shutil, sys
+from pathlib import Path
+
+proj, pub, file_url, ftype = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], sys.argv[4]
+scene = {"file": file_url, "type": ftype}
+
+# starting camera: mid-tour view = well inside the scene
+sparse0 = proj / "sparse" / "0"
+if sparse0.is_dir():
+    import numpy as np
+    import pycolmap
+    rec = pycolmap.Reconstruction(str(sparse0))
+    images = sorted(rec.images.values(), key=lambda im: im.name)
+    if images:
+        im = images[len(images) // 2]
+        cfw = im.cam_from_world() if callable(im.cam_from_world) else im.cam_from_world
+        R_wc = np.asarray(cfw.rotation.matrix()).T
+        scene["camera"] = {
+            "position": [round(float(v), 5) for v in im.projection_center()],
+            "forward": [round(float(v), 5) for v in R_wc[:, 2]],
+        }
+
+# navigation metadata (floors + minimap) from analyze_scene.py, sparse/0 only -
+# other sub-models live in different coordinate frames than the trained splat
+floors_json = proj / "analysis" / "floors.json"
+if floors_json.is_file():
+    fj = json.loads(floors_json.read_text())
+    floors = []
+    for f in fj.get("floors", []):
+        plan = Path(f.get("floorplan", ""))
+        if not plan.is_file():
+            continue
+        dest = f"plan-f{f['index']}.png"
+        shutil.copy(plan, pub / dest)
+        floors.append({
+            "index": f["index"],
+            "level": f["level"],
+            "plan": "/" + dest,
+            "plan_transform": f.get("plan_transform"),
+            "camera": f.get("camera"),
+        })
+    if floors:
+        scene["nav"] = {
+            "up": fj["up"],
+            "plan_x": fj.get("plan_x"),
+            "plan_y": fj.get("plan_y"),
+            "eye_height": fj.get("eye_height_scene_units"),
+            "floors": floors,
+        }
+
+print(json.dumps(scene))
 PY
 )"
 fi
 
-if [[ -n "$CAMERA_JSON" ]]; then
-  cat > "$VIEWER_DIR/public/scene.json" <<JSON
-{ "file": "/scene.$ext", "type": "$TYPE", "camera": $CAMERA_JSON }
-JSON
-  echo "[preview] camera: starting at a mid-tour capture pose" >&2
+if [[ -n "$SCENE_JSON" ]]; then
+  printf '%s\n' "$SCENE_JSON" > "$VIEWER_DIR/public/scene.json"
+  if [[ "$SCENE_JSON" == *'"nav"'* ]]; then
+    echo "[preview] camera: mid-tour capture pose; nav: floors + minimap enabled" >&2
+  else
+    echo "[preview] camera: starting at a mid-tour capture pose" >&2
+    echo "[preview] tip   : run analyze_scene.py first to enable the minimap + floor switcher" >&2
+  fi
 else
   cat > "$VIEWER_DIR/public/scene.json" <<JSON
 { "file": "/scene.$ext", "type": "$TYPE" }
