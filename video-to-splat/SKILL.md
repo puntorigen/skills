@@ -25,6 +25,7 @@ flowchart LR
   Mp4["mp4 tour"] --> Ex["extract_frames.py<br/>ffmpeg + sharpest-frame pick"]
   Ex --> Colmap["run_colmap.py<br/>pycolmap SfM: poses + sparse cloud"]
   Colmap --> Brush["train_splat.sh<br/>Brush (Metal), export .ply"]
+  Colmap -.-> An["analyze_scene.py<br/>floors + floorplan PNGs"]
   Brush --> Conv["convert_splat.sh<br/>splat-transform to .sog"]
   Conv --> View["preview.sh<br/>local Aholo viewer"]
 ```
@@ -75,6 +76,7 @@ Copy this checklist and track progress:
 - [ ] 1. Setup: run setup_env.sh (first time only)
 - [ ] 2. Extract frames from the mp4 (extract_frames.py)
 - [ ] 3. Recover camera poses + sparse cloud (run_colmap.py) - CHECK the % registered
+- [ ] 3b. (multi-story / floorplan wanted) analyze_scene.py: floors + floorplan PNGs
 - [ ] 4. Smoke-train ~2000 steps to validate poses before committing hours
 - [ ] 5. Full train (train_splat.sh, default 30000 steps) -> splat.ply
 - [ ] 6. Compress to .sog (convert_splat.sh)
@@ -91,7 +93,32 @@ Copy this checklist and track progress:
   drops near-duplicate frames. Downscales the long side to 1600 px.
 - Aim for **~50-200 well-spread, in-focus frames**. Raise `--fps` for a fast tour,
   lower it for a slow one. `--max-frames` caps the count (COLMAP time grows fast).
+- **Fast walkthrough (registration comes back low)?** The fix is temporal density:
+  re-extract at `--fps 4`-`6` with `--max-frames` raised to match
+  (duration x fps), and pair it with a wider `--overlap` in step 3. A quick
+  sanity check: at walking speed you want consecutive kept frames to share well
+  over half their view.
 - Prints the project dir. Frames land in `~/.video-to-splat/projects/my-tour/images/`.
+
+#### Merging multiple videos of the same location
+
+A complementary capture (e.g. shot on another date, covering new rooms) can be
+appended to the same project; one joint reconstruction stitches the videos
+through their overlapping areas:
+
+```bash
+"$PY" "$SKILL_DIR/scripts/extract_frames.py" tourA.mp4 --name my-tour --fps 2
+"$PY" "$SKILL_DIR/scripts/extract_frames.py" tourB.mp4 --name my-tour --append --fps 2
+"$PY" "$SKILL_DIR/scripts/run_colmap.py" my-tour --matcher exhaustive
+```
+
+- Each video's frames get their own filename prefix (`--prefix`, defaults to the
+  video name when appending).
+- **Use `--matcher exhaustive`** (or `--loop-detection`) for merged projects -
+  sequential matching never connects one video to the other.
+- Add `--multi-camera` to run_colmap.py if the videos come from different devices.
+- Both captures must show the overlapping rooms well, in **similar lighting**;
+  moved furniture and big exposure shifts cause ghosting in the shared areas.
 
 ### Step 3: Camera poses (Structure-from-Motion)
 
@@ -105,6 +132,49 @@ Copy this checklist and track progress:
   under ~80%, the splat will only cover part of the scene - fix the capture or
   matching before training (see Anti-patterns and REFERENCE.md).
 - Writes the COLMAP model to `projects/my-tour/sparse/0/`.
+
+**When registration is low** (fast motion, stairs, blur), escalate in this order -
+each rung costs more compute:
+
+```bash
+# 1. denser frames (step 2 with --fps 4-6) + wider sequential overlap
+"$PY" "$SKILL_DIR/scripts/run_colmap.py" my-tour --overlap 25 --max-features 12000
+# 2. relaxed mapper thresholds (accepts weaker links; slight drift risk)
+"$PY" "$SKILL_DIR/scripts/run_colmap.py" my-tour --overlap 25 --relaxed
+# 3. loop detection: reconnects revisited areas (vocab tree ships with setup)
+"$PY" "$SKILL_DIR/scripts/run_colmap.py" my-tour --overlap 25 --relaxed --loop-detection
+# 4. exhaustive matching (any-to-any; O(n^2), fine up to ~400 frames)
+"$PY" "$SKILL_DIR/scripts/run_colmap.py" my-tour --matcher exhaustive --relaxed
+```
+
+Also read the "disconnected sub-models" note in the output: many sub-models means
+the tour breaks into islands (typical at doorways/stairs shot too fast) - denser
+frames bridge them; exhaustive matching alone usually does not.
+
+### Step 3b: Floors + floorplan (optional, no training needed)
+
+For multi-story tours or when the user wants a map of the space:
+
+```bash
+"$PY" "$SKILL_DIR/scripts/analyze_scene.py" my-tour            # auto-detect floors
+"$PY" "$SKILL_DIR/scripts/analyze_scene.py" my-tour --floors 3 # force a count
+"$PY" "$SKILL_DIR/scripts/analyze_scene.py" my-tour --model 1  # analyze sparse/1
+```
+
+- Estimates gravity from camera orientations (refined against the point cloud),
+  calibrates scale from the camera's **eye height above the floor**, clusters
+  camera heights into **floors** (a story must be >1.2 eye heights; garden
+  steps and split levels don't count), and labels stair transitions.
+- Renders a top-down **floorplan PNG per floor** (`analysis/floorplan-f<N>.png`):
+  wall-point density in blue/white, the camera walk path in orange, green circle
+  at the path start. Machine-readable summary in `analysis/floors.json`.
+- **Shattered reconstruction?** run_colmap.py keeps every sub-model
+  (`sparse/0`, `sparse/1`, ..., largest first). Fast tours usually break at the
+  stairs, so each island IS roughly one floor - analyze each with `--model N`
+  and map sub-models to floors by their frame numbers/time spans. Sub-models
+  have independent scales and orientations; don't compare their coordinates.
+- Everything is relative scale (SfM has no meters). Quality tracks registration:
+  islands or sparse coverage make faint/partial plans.
 
 ### Step 4: Smoke-train first (strongly recommended)
 
@@ -175,9 +245,19 @@ Reconstruction quality is set on the camera far more than in any flag:
 | | `--max-frames` | `200` | Cap on frames (COLMAP time grows fast). |
 | | `--max-size` | `1600` | Downscale long side (px). |
 | | `--dedup-dist` | `4` | Drop near-duplicate frames (0 = keep all). |
+| | `--append` | off | Add this video to an existing project (multi-capture merge). |
+| | `--prefix` | `frame` / video name | Filename prefix for this video's frames. |
 | run_colmap.py | `--matcher` | `sequential` | `sequential` (video) or `exhaustive` (small/loopy). |
-| | `--loop-detection` | off | Vocab-tree loop closure (needs `--vocab-tree`). |
+| | `--overlap` | `10` | Sequential: neighbors matched per frame (20-30 for fast tours). |
+| | `--max-features` | `8192` | SIFT features/image (12000+ for low-texture interiors). |
+| | `--relaxed` | off | Lower mapper thresholds; registers more frames on hard footage. |
+| | `--skip-matching` | off | Reuse database.db; redo only the mapping step. |
+| | `--loop-detection` | off | Vocab-tree loop closure (tree bundled by setup_env.sh). |
 | | `--multi-camera` | off | Per-image intrinsics instead of one shared camera. |
+| analyze_scene.py | `--floors` | auto | Force the number of floors. |
+| | `--model` | `0` | Which sub-model to analyze (sparse/N). |
+| | `--plan-size` | `1200` | Floorplan PNG size (px). |
+| | `--min-track` | `3` | Min images per sparse point used in the plan. |
 | train_splat.sh | `--steps` | `30000` | Training iterations (try `2000` to smoke-test). |
 | | `--sh-degree` | `2` | SH degree 0-4 (higher = shinier + bigger). |
 | | `--max-resolution` | `1600` | Cap training image long side. |

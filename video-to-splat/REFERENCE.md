@@ -24,12 +24,14 @@ Everything is under `~/.video-to-splat/` (override with `VIDEO_TO_SPLAT_HOME`):
 ~/.video-to-splat/
   .venv/                       # uv venv: pycolmap, opencv, numpy, pillow
   brush/brush_app             # Brush training binary (macOS arm64)
+  vocab_tree_faiss_flickr100K_words32K.bin  # COLMAP vocab tree (loop detection)
   viewer/                      # vite + @manycore/aholo-viewer app (+ public/)
   projects/<name>/
     images/frame-0001.jpg ...  # selected frames (extract_frames.py)
     frames.json                # selection manifest
     database.db                # COLMAP feature/match DB
     sparse/0/                  # COLMAP model: cameras.bin, images.bin, points3D.bin
+    analysis/                  # analyze_scene.py: floors.json, floorplan-f<N>.png
     splat.ply                  # trained splat (Brush export, lossless master)
     splat.sog                  # compressed splat for the web (convert_splat.sh)
 ```
@@ -69,12 +71,88 @@ both `.bin` and `.txt` COLMAP models.
   few hundred frames. Matching + mapping dominate the ~10-30 min SfM time.
 - **Sequential** matching suits ordered video frames. **Exhaustive** is O(n^2) but
   more robust for small (<~150), unordered, or loopy sets.
-- **Loop detection** (`--loop-detection`) needs a COLMAP vocabulary tree
-  (`--vocab-tree path/to/vocab_tree.bin`, downloadable from the COLMAP site). It
-  helps close loops when the camera returns to the start. Off by default.
+- **Loop detection** (`--loop-detection`) retrieves visually similar frames via
+  a vocabulary tree and matches them regardless of temporal distance - it is
+  what reconnects a tour that revisits rooms/hallways. `setup_env.sh` downloads
+  the faiss-format 32K-word tree (from the COLMAP 3.11.1 release assets) to
+  `~/.video-to-splat/` and `run_colmap.py` finds it there automatically;
+  `--vocab-tree` overrides the path. Off by default. Note the legacy flann
+  trees hosted on demuc.de **crash** pycolmap >= 3.12 (COLMAP moved to faiss
+  in May 2025) - use the release-asset trees only.
 - COLMAP can produce several disconnected sub-models when overlap is weak;
-  `run_colmap.py` keeps the largest and writes it to `sparse/0`, reporting the
-  registered-image fraction as a quality gate.
+  `run_colmap.py` writes them all, ranked by size (`sparse/0` = largest, which
+  is what training uses), and reports the registered-image fraction as a
+  quality gate. The smaller islands still hold valid geometry (often the other
+  floors) for `analyze_scene.py --model N`.
+- `--skip-matching` reuses the existing `database.db` and redoes only the
+  mapping step - iterate on `--relaxed` or mapper behavior without paying for
+  feature extraction + matching again (~8 of the ~20 min on 900 frames).
+
+### Fast-motion / low-registration playbook
+
+Fast walkthroughs (WhatsApp-style room tours) break SfM in a specific way: at
+2 fps the camera moves so far between kept frames that neighbors share too few
+inliers, the two-view links fail, and the model shatters into many disconnected
+sub-models (doorways and staircases are the usual break points). Knobs, in the
+order to try them:
+
+| Knob | Where | Effect |
+|------|-------|--------|
+| `--fps 4-6` + matching `--max-frames` | extract_frames.py | The real fix: restores temporal overlap. Frame count grows; sequential matching cost grows only linearly. |
+| `--overlap 20-30` | run_colmap.py | Each frame matched to more neighbors; bridges longer blur gaps. |
+| `--max-features 12000-16000` | run_colmap.py | More SIFT features per image; helps bare walls / compressed video. |
+| `--relaxed` | run_colmap.py | Lowers mapper gates (`min_num_matches` 15->8, `init_min_num_inliers` 100->50, `abs_pose_min_num_inliers` 30->15, ratio 0.25->0.15). Registers more frames, small drift risk. |
+| `--loop-detection` | run_colmap.py | Vocab-tree retrieval pairs each frame with visually similar ones anywhere in the tour; reconnects revisited rooms/hallways across islands. |
+| `--matcher exhaustive` | run_colmap.py | Any-to-any pairing; O(n^2), practical to ~400 frames. Connects islands only if they truly share visual content. |
+
+Note that exhaustive matching does **not** fix missing temporal overlap - if no
+pair of frames shares enough content, no matcher can link them. Density first.
+
+## Floors + floorplan (analyze_scene.py)
+
+Runs on any `sparse/N` model (`--model`, default the largest = 0) - no training
+required. Method:
+
+1. **Gravity/up**: mean camera "up" axis (the `-Y` row of each cam-to-world
+   rotation; phones are held roughly upright), refined by a coarse-to-fine
+   cone search (25 deg then 3 deg) for the direction that maximizes the
+   "peakiness" of the point cloud's height histogram - floors/ceilings are
+   horizontal planes, so the true vertical concentrates them into sharp bins.
+   (A naive PCA snap fails here: a house's principal axes follow its horizontal
+   extent, and a few degrees of tilt turns horizontal walking into fake height
+   drift that splits one floor into several.)
+2. **Scale from eye height**: for a sample of cameras, the local floor level is
+   the 5th percentile of point heights within a horizontal radius; the median
+   camera-minus-floor distance is the walker's eye height (~1.5 m in reality).
+   This is the one physically known quantity in a scale-free reconstruction.
+3. **Floors**: peaks of the camera-height histogram separated by at least
+   1.2 eye heights (~1.8 m - a real story, not a split-level or garden step),
+   each holding >= 6% of frames. Peak-finding beats gap-splitting because
+   stairs produce heights *between* floors - there is no clean gap. Frames
+   within 0.45 eye heights of a level belong to it; the rest are stair
+   transitions. `--floors N` forces a count when auto-detection is wrong.
+4. **Floorplan**: sparse points in a wall band around eye level (-0.6 to +0.4
+   eye heights - excludes floor slab and ceiling), projected onto the
+   horizontal plane, PCA-aligned so dominant wall directions run along the
+   image axes, rendered as a log-scaled density map (PIL, no matplotlib)
+   with the camera path in orange and a green start marker.
+
+Caveats:
+
+- **No metric scale** - SfM is scale-free, so `floors.json` heights are scene
+  units; `eye_height_scene_units` is the scale anchor (~1.5 m) if you need
+  approximate meters.
+- Quality tracks registration: if only one floor's frames registered into the
+  analyzed model, only that floor can be detected there. Fast tours usually
+  shatter *at the stairs*, so each sub-model tends to be one floor: analyze
+  `--model 1`, `--model 2`, ... (outputs get a `-mN` suffix) and identify each
+  island's floor by its frame-number span. Sub-models have independent scale
+  and orientation - never mix their coordinates.
+- The wall-density "plan" is a sparse-point sketch, not CAD: enough to see the
+  room layout and walk path, but walls are fuzzy where SIFT found little
+  texture (bare drywall, glass).
+- Density peaks can merge when the tour spends very little time on a floor
+  (< ~6% of frames); use `--floors` to force the known count.
 
 ## Formats and Aholo compatibility
 
@@ -102,6 +180,36 @@ Splats here follow the OpenCV convention (`-Y` up); the bundled viewer sets
 Note: Aholo's own `splat-transform` tool (referenced in their docs) is proprietary
 and not redistributable, so this skill uses the open-source PlayCanvas
 `@playcanvas/splat-transform` instead - it reads standard PLY and writes SOG/SPZ.
+
+## Merging multiple captures of one location
+
+`extract_frames.py --append` pools frames from several videos into one project
+(each with its own filename prefix); `run_colmap.py` then solves one joint
+reconstruction and the overlap between captures registers everything into a
+single coordinate frame. This is the right way to extend a scene - training two
+splats separately and merging the `.ply` files leaves duplicated geometry and a
+brightness seam in the shared rooms, and requires hand-estimating the alignment
+transform. Joint reconstruction costs nothing extra since 3DGS training is a
+from-scratch optimization either way.
+
+What decides the result quality:
+
+- **Matcher**: plain sequential matching pairs only temporal neighbors *within*
+  a video, so merged captures never connect. Use `--matcher exhaustive`
+  (fine to ~300-400 total frames) or `--loop-detection` + vocab tree.
+  Prefixed names still sort each video contiguously, so sequential *within*
+  each video remains valid when loop detection provides the cross-video pairs.
+- **Appearance drift**: SIFT registration tolerates moderate lighting change,
+  but 3DGS training averages what the views saw - big exposure/white-balance/
+  sun-angle differences make the overlap muddy, and **moved objects become
+  ghosts**. Prefer similar time of day; if lighting differs badly, use the
+  second video mostly for the new rooms plus just enough overlap to register.
+- **Intrinsics**: the default single shared camera assumes one device. Pass
+  `--multi-camera` when the videos come from different phones/cameras.
+- **Connectivity check**: after SfM, if COLMAP reports multiple disconnected
+  sub-models, the cross-video overlap was too weak - the script keeps only the
+  largest model, which silently drops the other capture's rooms. Recapture the
+  transition areas or add overlap frames.
 
 ## Performance expectations (M-series Mac)
 
@@ -141,9 +249,9 @@ NVIDIA box is mostly a per-stage swap:
 
 - **`import pycolmap` fails / no wheel** - needs macOS 14+ arm64. On Intel/old
   macOS there's no wheel; use the server variant or build COLMAP from source.
-- **Low "% registered" in SfM** - weak overlap or blur. Raise `--fps`, try
-  `--matcher exhaustive`, enable `--loop-detection` (with a vocab tree), or
-  recapture with slower, more overlapping motion.
+- **Low "% registered" in SfM** - weak overlap or blur. Work through the
+  fast-motion playbook above: denser `--fps`, wider `--overlap`, `--relaxed`,
+  then `--matcher exhaustive`; recapture with slower motion if all fail.
 - **Splat is a noisy cloud after training** - almost always bad poses. Verify with
   a 2k smoke run; if poses are wrong, no amount of steps fixes it.
 - **Brush won't launch / "no source"** - pass the project dir (containing

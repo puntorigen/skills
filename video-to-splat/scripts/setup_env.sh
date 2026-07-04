@@ -108,6 +108,20 @@ else
   echo "[setup] Brush already present at $BRUSH_BIN (use --update to re-download)" >&2
 fi
 
+# --- COLMAP vocab tree (loop detection) -----------------------------------------
+# ~9 MB, enables run_colmap.py --loop-detection (helps loopy multi-floor tours).
+# Must be the faiss-format tree from the COLMAP release assets - the legacy
+# flann trees on demuc.de crash pycolmap >= 3.12.
+VOCAB_TREE="$VTS_HOME/vocab_tree_faiss_flickr100K_words32K.bin"
+if [[ ! -s "$VOCAB_TREE" || "$UPDATE" -eq 1 ]]; then
+  echo "[setup] downloading COLMAP vocab tree (loop detection)" >&2
+  curl -fL --retry 2 -o "$VOCAB_TREE" \
+    "https://github.com/colmap/colmap/releases/download/3.11.1/vocab_tree_faiss_flickr100K_words32K.bin" >&2 || \
+    echo "[setup] WARNING: vocab tree download failed; --loop-detection will need --vocab-tree" >&2
+else
+  echo "[setup] vocab tree present at $VOCAB_TREE" >&2
+fi
+
 # --- viewer app (vite + @manycore/aholo-viewer) --------------------------------
 echo "[setup] preparing Aholo viewer app in $VIEWER_DIR" >&2
 mkdir -p "$VIEWER_DIR/public"

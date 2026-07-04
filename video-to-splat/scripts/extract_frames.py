@@ -18,6 +18,13 @@ of motion blur and near-identical frames, so we:
 Output layout (consumed by run_colmap.py):
     <VIDEO_TO_SPLAT_HOME>/projects/<name>/images/frame-0001.jpg ...
 
+Multiple videos of the same location (e.g. a second tour shot on another date
+that covers new rooms) can be merged into one project with --append: frames from
+each video get their own filename prefix and one joint COLMAP reconstruction
+stitches them via the overlapping areas. When a project holds more than one
+video, run run_colmap.py with --matcher exhaustive (or --loop-detection) so
+cross-video overlap is actually matched.
+
 Nothing is uploaded anywhere; all frames stay under the data root.
 """
 
@@ -190,6 +197,12 @@ def main(argv=None):
     p.add_argument("--dedup-dist", type=int, default=4, dest="dedup_dist",
                    help="drop a frame if within this dHash Hamming distance of the "
                         "previous kept frame; 0 disables (default 4)")
+    p.add_argument("--append", action="store_true",
+                   help="add this video's frames to an existing project instead of "
+                        "replacing them (merge multiple captures of the same location)")
+    p.add_argument("--prefix", default=None,
+                   help="filename prefix for this video's frames (default: 'frame', "
+                        "or the video's name when --append)")
     p.add_argument("--home", default=None, help="override VIDEO_TO_SPLAT_HOME")
     args = p.parse_args(argv)
 
@@ -211,8 +224,29 @@ def main(argv=None):
     name = slugify(args.name or video.stem)
     project = home / "projects" / name
     images = project / "images"
-    if images.exists():
-        shutil.rmtree(images)
+
+    prefix = slugify(args.prefix) if args.prefix else \
+        (slugify(video.stem) if args.append else "frame")
+    if args.append:
+        if not images.is_dir() or not any(images.iterdir()):
+            fail(f"--append needs an existing project with frames at {images} "
+                 f"(run without --append first)")
+        clash = next(iter(images.glob(f"{prefix}-*.jpg")), None)
+        if clash is not None:
+            fail(f"frames with prefix {prefix!r} already exist in {images} "
+                 f"(e.g. {clash.name}); pick a different --prefix")
+        # stale SfM outputs would silently ignore the new frames
+        for stale in (project / "database.db", project / "sparse"):
+            if stale.exists():
+                eprint(f"[frames] removing stale {stale.name} (re-run run_colmap.py "
+                       f"over the merged set)")
+                if stale.is_dir():
+                    shutil.rmtree(stale)
+                else:
+                    stale.unlink()
+    else:
+        if images.exists():
+            shutil.rmtree(images)
     images.mkdir(parents=True, exist_ok=True)
 
     info = ffprobe_info(video)
@@ -263,14 +297,15 @@ def main(argv=None):
         idx = {round(i * (len(kept) - 1) / (n - 1)) for i in range(n)}
         kept = [f for i, f in enumerate(kept) if i in idx]
 
-    # 5. write final frames (resized) with stable names
+    # 5. write final frames (resized) with stable, prefixed names
     manifest_frames = []
     for i, f in enumerate(kept, start=1):
-        dest = images / f"frame-{i:04d}.jpg"
+        dest = images / f"{prefix}-{i:04d}.jpg"
         shutil.copy2(f["path"], dest)
         dims = resize_longest(dest, args.max_size)
         manifest_frames.append({
             "name": dest.name,
+            "video": video.name,
             "t": round(f["t"], 3),
             "sharpness": round(f["sharp"], 2),
             "size": list(dims) if dims else None,
@@ -278,10 +313,10 @@ def main(argv=None):
 
     shutil.rmtree(scratch, ignore_errors=True)
 
-    manifest = {
-        "project": str(project),
-        "name": name,
+    # 6. write/merge the manifest (frames.json holds every video in the project)
+    video_entry = {
         "video": str(video),
+        "prefix": prefix,
         "duration": info["duration"],
         "source_fps": info["fps"],
         "target_fps": args.fps,
@@ -291,14 +326,43 @@ def main(argv=None):
         "backend": backend,
         "count_candidates": len(cands),
         "count_selected": len(manifest_frames),
-        "frames": manifest_frames,
     }
-    (project / "frames.json").write_text(json.dumps(manifest, indent=2))
+    videos, frames = [], []
+    manifest_path = project / "frames.json"
+    if args.append and manifest_path.exists():
+        try:
+            old = json.loads(manifest_path.read_text())
+            if "videos" in old:
+                videos = old["videos"]
+                frames = old.get("frames", [])
+            elif "video" in old:  # migrate the single-video format
+                videos = [{k: old.get(k) for k in (
+                    "video", "duration", "source_fps", "target_fps", "oversample",
+                    "max_size", "dedup_dist", "backend",
+                    "count_candidates", "count_selected")} | {"prefix": "frame"}]
+                frames = old.get("frames", [])
+        except (json.JSONDecodeError, OSError) as e:
+            eprint(f"[frames] could not merge old frames.json ({e}); starting fresh")
+    videos.append(video_entry)
+    frames.extend(manifest_frames)
+    manifest = {
+        "project": str(project),
+        "name": name,
+        "videos": videos,
+        "count_selected": len(frames),
+        "frames": frames,
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2))
 
+    total_images = len(list(images.glob("*.jpg")))
     eprint(f"[frames] project : {project}")
     eprint(f"[frames] backend : {backend}")
     eprint(f"[frames] selected {len(manifest_frames)} of {len(cands)} candidates "
-           f"(target {args.fps} fps, oversample x{args.oversample})")
+           f"(target {args.fps} fps, oversample x{args.oversample}, prefix {prefix!r})")
+    if len(videos) > 1:
+        eprint(f"[frames] project now holds {len(videos)} videos / {total_images} frames.")
+        eprint(f"[frames] IMPORTANT: run run_colmap.py with --matcher exhaustive (or "
+               f"--loop-detection) so overlap BETWEEN videos gets matched.")
     if len(manifest_frames) < 20:
         eprint(f"[frames] WARNING: only {len(manifest_frames)} frames. Reconstruction is "
                f"unreliable below ~20-30 views. Raise --fps or shoot a longer/slower tour.")
