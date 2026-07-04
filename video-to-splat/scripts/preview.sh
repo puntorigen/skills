@@ -64,9 +64,40 @@ mkdir -p "$VIEWER_DIR/public"
 # clear stale scenes so the app always loads the current one
 rm -f "$VIEWER_DIR/public/scene."{sog,spz,ply} 2>/dev/null || true
 cp "$SPLAT" "$VIEWER_DIR/public/scene.$ext"
-cat > "$VIEWER_DIR/public/scene.json" <<JSON
+
+# starting camera: use a real capture pose from the COLMAP model when available
+# (an indoor splat looks black/noisy from an arbitrary outside viewpoint)
+CAMERA_JSON=""
+PROJ_DIR="$(dirname "$SPLAT")"
+PYBIN="$VTS_HOME/.venv/bin/python"
+if [[ -d "$PROJ_DIR/sparse/0" && -x "$PYBIN" ]]; then
+  CAMERA_JSON="$("$PYBIN" - "$PROJ_DIR/sparse/0" <<'PY' 2>/dev/null || true
+import json, sys
+import numpy as np
+import pycolmap
+rec = pycolmap.Reconstruction(sys.argv[1])
+images = sorted(rec.images.values(), key=lambda im: im.name)
+im = images[len(images) // 2]          # mid-tour view: well inside the scene
+cfw = im.cam_from_world() if callable(im.cam_from_world) else im.cam_from_world
+R_wc = np.asarray(cfw.rotation.matrix()).T
+pos = np.asarray(im.projection_center(), dtype=float)
+fwd = R_wc[:, 2]                       # camera +Z (look direction) in world
+print(json.dumps({"position": [round(float(v), 5) for v in pos],
+                  "forward": [round(float(v), 5) for v in fwd]}))
+PY
+)"
+fi
+
+if [[ -n "$CAMERA_JSON" ]]; then
+  cat > "$VIEWER_DIR/public/scene.json" <<JSON
+{ "file": "/scene.$ext", "type": "$TYPE", "camera": $CAMERA_JSON }
+JSON
+  echo "[preview] camera: starting at a mid-tour capture pose" >&2
+else
+  cat > "$VIEWER_DIR/public/scene.json" <<JSON
 { "file": "/scene.$ext", "type": "$TYPE" }
 JSON
+fi
 
 echo "[preview] splat : $SPLAT ($(du -h "$SPLAT" | cut -f1))" >&2
 echo "[preview] viewer: $VIEWER_DIR  (type: $TYPE)" >&2

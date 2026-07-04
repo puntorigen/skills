@@ -19,7 +19,13 @@ import {
   SplatUtils,
 } from '@manycore/aholo-viewer';
 
-type SceneDesc = { file: string; type: 'sog' | 'spz' | 'ply' };
+type SceneDesc = {
+  file: string;
+  type: 'sog' | 'spz' | 'ply';
+  // optional starting pose exported by preview.sh from the COLMAP model:
+  // camera position + viewing direction of a real capture frame
+  camera?: { position: number[]; forward: number[] };
+};
 
 const hud = document.getElementById('hud')!;
 const errBox = document.getElementById('err')!;
@@ -154,26 +160,47 @@ function installControls(
       if (r && isFinite(r) && r > 0) radius = r * 2.2;
       apply();
     },
+    // place the camera at an exact position looking at an exact target
+    setPose(p: number[], t: number[]) {
+      target.set(t[0], t[1], t[2]);
+      const off = { x: p[0] - t[0], y: p[1] - t[1], z: p[2] - t[2] };
+      radius = Math.max(0.05, Math.hypot(off.x, off.y, off.z));
+      const dir = { x: off.x / radius, y: off.y / radius, z: off.z / radius };
+      pitch = clampPitch(Math.asin(-dir.y));
+      yaw = Math.atan2(dir.x, dir.z);
+      apply();
+    },
     apply,
   };
 }
 
-function tryComputeBounds(splat: any): { center: any; radius: number } | null {
+// Robust scene bounds straight from the splat centers (SplatData.fillCenters).
+// Median center + percentile radius so stray far-away floaters (common in
+// splats trained from inward-looking tours) don't blow up the framing.
+function tryComputeBounds(data: any): { center: any; radius: number } | null {
   try {
-    const box = (SplatUtils as any).computeDenseBox?.(splat);
-    if (box && box.min && box.max) {
-      const c = {
-        x: (box.min.x + box.max.x) / 2,
-        y: (box.min.y + box.max.y) / 2,
-        z: (box.min.z + box.max.z) / 2,
-      };
-      const r = Math.hypot(
-        box.max.x - box.min.x,
-        box.max.y - box.min.y,
-        box.max.z - box.min.z,
-      ) / 2;
-      return { center: c, radius: r };
+    const n = data?.counts;
+    if (!n || typeof data.fillCenters !== 'function') return null;
+    const centers = new Float32Array(n * 3);
+    data.fillCenters(centers);
+
+    const sample = Math.min(n, 50000);
+    const step = Math.max(1, Math.floor(n / sample));
+    const xs: number[] = [], ys: number[] = [], zs: number[] = [];
+    for (let i = 0; i < n; i += step) {
+      xs.push(centers[i * 3]); ys.push(centers[i * 3 + 1]); zs.push(centers[i * 3 + 2]);
     }
+    const med = (a: number[]) => {
+      const s = [...a].sort((p, q) => p - q);
+      return s[Math.floor(s.length / 2)];
+    };
+    const c = { x: med(xs), y: med(ys), z: med(zs) };
+    const d2 = xs.map((x, i) =>
+      (x - c.x) ** 2 + (ys[i] - c.y) ** 2 + (zs[i] - c.z) ** 2).sort((p, q) => p - q);
+    // 80th percentile distance = the bulk of the scene, floaters excluded
+    const r = Math.sqrt(d2[Math.floor(d2.length * 0.8)]);
+    if (!isFinite(r) || r <= 0) return null;
+    return { center: c, radius: r };
   } catch { /* ignore - fall back to defaults */ }
   return null;
 }
@@ -197,6 +224,12 @@ async function main() {
     camera = new PerspectiveCamera(60, aspect, 0.05, 4000);
     viewer.setCamera?.(camera);
   }
+  // Aholo's default camera is tuned for millimeter-scale scenes (near=100).
+  // COLMAP/Brush scenes are a few unitless "meters" across - near=100 clips
+  // the entire scene and renders pure black.
+  camera.near = 0.05;
+  camera.far = 4000;
+  camera.updateProjectionMatrix?.();
 
   const render = () => viewer.render();
   const controls = installControls(camera, container, render);
@@ -212,6 +245,8 @@ async function main() {
 
   const splat = await (SplatUtils as any).createSplat(data);
   viewer.getScene().add(splat);
+  // eslint-disable-next-line no-console
+  console.log('[video-to-splat viewer] splats:', data?.counts);
 
   setViewerConfig(viewer, {
     pipeline: {
@@ -224,9 +259,21 @@ async function main() {
     },
   });
 
-  const bounds = tryComputeBounds(splat);
-  if (bounds) controls.frameTo(bounds.center, bounds.radius);
-  else controls.apply();
+  if (scene.camera?.position && scene.camera?.forward) {
+    // start exactly where the capture camera stood, looking the same way
+    const p = scene.camera.position, f = scene.camera.forward;
+    controls.setPose(p, [p[0] + f[0], p[1] + f[1], p[2] + f[2]]);
+  } else {
+    const bounds = tryComputeBounds(data);
+    if (bounds) controls.frameTo(bounds.center, bounds.radius);
+    else controls.apply();
+  }
+  // debug hooks: place the camera / inspect state from the devtools console
+  (window as any).__setPose = (p: number[], f: number[]) =>
+    controls.setPose(p, [p[0] + f[0], p[1] + f[1], p[2] + f[2]]);
+  (window as any).__viewer = viewer;
+  (window as any).__camera = camera;
+  (window as any).__splat = splat;
 
   // continuous render loop (simple + robust for a preview)
   const loop = () => { viewer.render(); requestAnimationFrame(loop); };

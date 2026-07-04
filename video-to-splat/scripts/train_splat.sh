@@ -72,13 +72,30 @@ fi
 PLY_OUT="$PROJECT/splat.ply"
 rm -f "$PLY_OUT"
 
+# Brush scans its source dir RECURSIVELY and trains on the first
+# cameras.bin/images.bin/points3d.bin it finds anywhere. run_colmap.py keeps
+# every disconnected sub-model (sparse/0, sparse/1, ...), so feeding the raw
+# project dir would mix files from different sub-models = garbage training.
+# Stage a clean view holding only sparse/0.
+SRC="$PROJECT"
+STAGE=""
+if compgen -G "$PROJECT/sparse/[1-9]*" > /dev/null; then
+  STAGE="$(mktemp -d "${TMPDIR:-/tmp}/brush-src.XXXXXX")"
+  ln -s "$PROJECT/images" "$STAGE/images"
+  mkdir -p "$STAGE/sparse"
+  cp -R "$PROJECT/sparse/0" "$STAGE/sparse/0"
+  SRC="$STAGE"
+  echo "[train] staging     : $STAGE (sparse/0 only; project has extra sub-models)" >&2
+  trap '[[ -n "$STAGE" ]] && rm -rf "$STAGE"' EXIT
+fi
+
 echo "[train] project    : $PROJECT" >&2
 echo "[train] steps       : $STEPS   sh-degree: $SH_DEGREE   max-res: $MAX_RES" >&2
 echo "[train] brush       : $BRUSH_BIN" >&2
 echo "[train] export      : $PLY_OUT" >&2
 echo "[train] NOTE: training is the slow stage (~minutes at 2k steps, hours at 30k on M-series)." >&2
 
-CMD=("$BRUSH_BIN" "$PROJECT"
+CMD=("$BRUSH_BIN" "$SRC"
      --total-steps "$STEPS"
      --sh-degree "$SH_DEGREE"
      --max-resolution "$MAX_RES"

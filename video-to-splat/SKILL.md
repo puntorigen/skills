@@ -131,7 +131,14 @@ through their overlapping areas:
 - This is the make-or-break step. **Read the reported "% registered".** If well
   under ~80%, the splat will only cover part of the scene - fix the capture or
   matching before training (see Anti-patterns and REFERENCE.md).
-- Writes the COLMAP model to `projects/my-tour/sparse/0/`.
+- On big frame sets this runs 15-30+ min but is not silent: it prints live
+  `[mapper] registered N/M` progress (pipe through `rg --line-buffered` if
+  filtering log noise). Run it in the background and check the progress lines
+  instead of waiting blind.
+- Judge "% registered" per sub-model, not just the total: 99% registered spread
+  over 8 islands still means no single trainable model covers the tour. The
+  per-model breakdown is printed at the end.
+- Writes the COLMAP model to `projects/my-tour/sparse/0/` (largest first).
 
 **When registration is low** (fast motion, stairs, blur), escalate in this order -
 each rung costs more compute:
@@ -186,8 +193,21 @@ bash "$SKILL_DIR/scripts/convert_splat.sh" my-tour
 bash "$SKILL_DIR/scripts/preview.sh" my-tour
 ```
 
-If the rough 2k-step splat already resembles the space, proceed to a full run. If
-it's a cloud of noise, the poses are bad - revisit steps 2-3, don't burn hours.
+**The gate is visual, not "it exported without errors."** A broken pipeline can
+still produce a well-formed .ply that renders as a noise cloud. Open the preview
+(or screenshot it with browser automation if you're running unattended) and
+confirm you can recognize the space before starting a full run. If it's fuzzy
+but clearly the room: good, full training will sharpen it. If it's an
+unrecognizable nebula: poses or training input are broken - revisit steps 2-3.
+
+Two cheap validation tricks:
+
+- A big scene can be validated in ~5 min by training a **small sub-model**
+  instead of the whole thing: copy `sparse/3` (or any 100-frame island) to a
+  scratch project's `sparse/0`, symlink `images/`, and train ~4000 steps.
+- Re-running `run_colmap.py` invalidates previous training: it rewrites
+  `sparse/` (possibly adding sub-models) and any existing `splat.ply` no longer
+  matches it. Always retrain after re-running SfM.
 
 ### Step 5: Full training
 
@@ -196,11 +216,17 @@ bash "$SKILL_DIR/scripts/train_splat.sh" my-tour --steps 30000
 ```
 
 - Trains with Brush and exports `projects/my-tour/splat.ply`.
+- If the project has multiple sub-models, training automatically stages a temp
+  dir with only `sparse/0` - Brush's recursive file scan would otherwise mix
+  cameras and points from different sub-models and train pure noise (see
+  REFERENCE.md).
 - `--sh-degree 2` (default) keeps files smaller; raise to 3 for shinier view-
   dependent highlights at the cost of size. `--with-viewer` opens Brush's live
   training GUI (it won't auto-exit; use for interactive runs only).
-- **Runtime is real**: roughly ~6 min per 1000 steps on an M-series Mac, so a 30k
-  run is a couple of hours. Start it and do other work.
+- **Runtime is real**: measured ~1.5 min per 1000 steps on an M4 Pro with ~400
+  training images (2000-step smoke ~2.5 min, 30k full run ~45 min). Slower
+  Apple Silicon or bigger frame sets can push a 30k run toward 1.5-2 h. Start
+  it and do other work; tell the user the expected wait up front.
 
 ### Step 6: Compress for the web
 
@@ -219,10 +245,15 @@ bash "$SKILL_DIR/scripts/preview.sh" my-tour                  # opens Chrome/Edg
 ```
 
 Starts a local Vite server with the bundled Aholo viewer (orbit: drag, pan:
-shift/right-drag, zoom: wheel, reset: R). Deliverables live under
-`~/.video-to-splat/projects/my-tour/`: `splat.ply` (master), `splat.sog` (web),
-and the COLMAP model. To use in a real Aholo app, load the `.sog` with
-`SplatLoader.parseSplatData(SplatFileType.SOG, url)` - see REFERENCE.md.
+shift/right-drag, zoom: wheel, reset: R). The camera starts at a real mid-tour
+capture pose read from the COLMAP model - an indoor splat viewed from an
+arbitrary outside viewpoint shows only wall-backs and looks broken. If the view
+is black, don't assume the splat is bad: see the black-preview entry in
+REFERENCE.md troubleshooting (near-plane and camera-pose gotchas live there).
+Deliverables live under `~/.video-to-splat/projects/my-tour/`: `splat.ply`
+(master), `splat.sog` (web), and the COLMAP model. To use in a real Aholo app,
+load the `.sog` with `SplatLoader.parseSplatData(SplatFileType.SOG, url)` - see
+REFERENCE.md.
 
 ## Capture guidance (the #1 quality lever)
 

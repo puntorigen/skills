@@ -61,6 +61,16 @@ Brush's COLMAP loader indexes the source directory case-insensitively and finds
 `sparse/0/` + `images/` layout that `run_colmap.py` writes loads directly. It reads
 both `.bin` and `.txt` COLMAP models.
 
+**Critical gotcha**: that scan is *recursive and takes the first match* - and it
+locates `points3d.bin` independently of `cameras.bin`/`images.bin`. If the project
+keeps several sub-models (`sparse/0`, `sparse/1`, ...), Brush can silently train
+cameras from one sub-model against points from another; the geometry is
+inconsistent, most splats get pruned, and the export is an unusable noise cloud
+in the wrong coordinate frame. `train_splat.sh` guards against this by staging a
+temp dir containing only `images/` + `sparse/0` whenever extra sub-models exist.
+When trained on a clean model, Brush preserves the COLMAP world frame exactly
+(verified point-for-point), so COLMAP camera poses remain valid in splat space.
+
 ## pycolmap notes (run_colmap.py)
 
 - API used: `extract_features(db, image_dir, camera_mode=SINGLE)` ->
@@ -217,11 +227,15 @@ What decides the result quality:
 |-------|------------|
 | Frame extraction | seconds - a minute |
 | COLMAP SfM (50-200 frames) | ~10-30 min |
-| Brush training | ~6 min / 1000 steps (so ~2 min at 2k, ~3 h at 30k) |
+| COLMAP SfM (900+ frames, fast-tour settings) | ~20 min (matching ~8, mapping ~12) |
+| Brush training | measured ~1.5 min / 1000 steps on M4 Pro, ~400 images (2k smoke ~2.5 min, 30k ~45 min); budget 2-4x on older chips / more frames |
 | SOG compression | seconds - a minute |
 
 A 2000-step smoke run end-to-end is typically well under ~30 min including SfM -
-always do it before a multi-hour full run.
+always do it before a long full run, and **look at the result in the preview**
+(a well-formed .ply that renders as noise means broken poses/input, not
+under-training). For faster iteration on a big scene, train a single ~100-frame
+sub-model for ~4000 steps (~5 min) instead of the whole reconstruction.
 
 ## Portability to a GPU server (later)
 
@@ -252,8 +266,13 @@ NVIDIA box is mostly a per-stage swap:
 - **Low "% registered" in SfM** - weak overlap or blur. Work through the
   fast-motion playbook above: denser `--fps`, wider `--overlap`, `--relaxed`,
   then `--matcher exhaustive`; recapture with slower motion if all fail.
-- **Splat is a noisy cloud after training** - almost always bad poses. Verify with
-  a 2k smoke run; if poses are wrong, no amount of steps fixes it.
+- **Splat is a noisy cloud after training** - two known causes. (1) Bad poses:
+  verify with a 2k smoke run; if poses are wrong, no amount of steps fixes it.
+  (2) Mixed sub-models: Brush scans its source dir *recursively* and can pair
+  `cameras.bin` from one `sparse/N` with `points3D.bin` from another -
+  train_splat.sh guards against this by staging `sparse/0` alone, but hit this
+  if training from a hand-built dir. Telltale signs: splat count far below
+  normal for the step count, and bounds spanning wildly different scales.
 - **Brush won't launch / "no source"** - pass the project dir (containing
   `sparse/0`); confirm the binary is at `~/.video-to-splat/brush/brush_app` and is
   executable (Gatekeeper may quarantine it - `xattr -dr com.apple.quarantine` the
@@ -262,4 +281,9 @@ NVIDIA box is mostly a per-stage swap:
   can be unavailable in some environments; CPU is slower but always works).
 - **Blank/black preview** - use Chrome/Edge 134+ (WebGPU). Check the on-screen
   error and the devtools console; try `?url=/scene.sog` explicitly. If the scene
-  is off-camera, press `R` to reset, then zoom out with the wheel.
+  is off-camera, press `R` to reset, then zoom out with the wheel. Two
+  hard-earned gotchas baked into the bundled viewer: (1) Aholo's default camera
+  has `near=100` (mm-scale scenes), which clips an entire COLMAP-scale scene to
+  black - the viewer resets it to 0.05; (2) an indoor splat viewed from an
+  arbitrary *outside* viewpoint shows only wall-backs and floaters - preview.sh
+  starts the camera at a real mid-tour capture pose from `sparse/0`.
