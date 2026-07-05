@@ -81,6 +81,21 @@ npx skills add puntorigen/skills@video-to-splat -g -y
 
 ---
 
+### object-to-3d
+
+Turn an mp4 of an orbited object into a clean, browser-navigable Gaussian splat
+**and** a watertight, millimeter-scaled STL/GLB mesh for 3D printing. Extends the
+`video-to-splat` pipeline with automatic splat cleanup and Poisson mesh
+extraction (open3d + trimesh).
+
+```bash
+npx skills add puntorigen/skills@object-to-3d -g -y
+```
+
+**Requires:** Apple Silicon Mac (macOS 14+), uv, ffmpeg, node, a WebGL2 browser.
+
+---
+
 ### teach-web-actions
 
 Record a real Chrome session (HAR + UI steps), distill it into a reusable
@@ -129,6 +144,7 @@ skills/
 ├── bg-music/
 ├── talking-head/
 ├── video-to-splat/
+├── object-to-3d/
 └── teach-web-actions/
 ```
 

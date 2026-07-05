@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# video-to-splat step 3 - train a Gaussian splat from the COLMAP model with Brush.
+# object-to-3d step 3 - train a Gaussian splat from the COLMAP model with Brush.
 #
 # Brush (github.com/ArthurBrussee/brush, Apache-2.0) trains 3DGS natively on the
 # Apple GPU via WebGPU/Metal - no CUDA, no python ML stack. We run its prebuilt
 # binary headlessly: given a source path (the project dir) it trains and exports
-# a standard 3DGS .ply. That .ply is already loadable by the Aholo viewer; step 4
+# a standard 3DGS .ply. That .ply is already loadable by the Three.js viewer; step 4
 # compresses it to .sog for the web.
 #
 # Usage:
@@ -136,6 +136,6 @@ if [[ ! -f "$PLY_OUT" ]]; then
 fi
 
 echo "[train] done. splat: $PLY_OUT ($(du -h "$PLY_OUT" | cut -f1))" >&2
-echo "[train] next: convert_splat.sh $PROJECT" >&2
+echo "[train] next: clean_splat.py $PROJECT   (then preview.sh / splat_to_mesh.py)" >&2
 # stdout: the trained ply path
 echo "$PLY_OUT"

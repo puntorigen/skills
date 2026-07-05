@@ -1,0 +1,20 @@
+{
+  "name": "object-to-3d-viewer",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "description": "Three.js + GaussianSplats3D orbit viewer for object-to-3d previews.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@mkkellogg/gaussian-splats-3d": "^0.4.7",
+    "three": "^0.175.0"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "vite": "^8.1.3"
+  }
+}

@@ -64,7 +64,8 @@ run_transform() {
   npx -y "@playcanvas/splat-transform@${ST_VERSION}" "$@"
 }
 
-sog_args=()
+# -w: overwrite - re-converting after retraining is the normal workflow
+sog_args=(-w)
 [[ "$FORCE_CPU" -eq 1 ]] && sog_args+=(-g cpu)
 sog_args+=("$PLY" "$OUT")
 
@@ -72,7 +73,7 @@ echo "[convert] building .sog ..." >&2
 if ! run_transform "${sog_args[@]}"; then
   if [[ "$FORCE_CPU" -eq 0 ]]; then
     echo "[convert] GPU compression failed; retrying on CPU (-g cpu) ..." >&2
-    run_transform -g cpu "$PLY" "$OUT"
+    run_transform -w -g cpu "$PLY" "$OUT"
   else
     echo "[convert] ERROR: splat-transform failed." >&2
     exit 1
@@ -85,7 +86,7 @@ echo "[convert] wrote $OUT ($(du -h "$OUT" | cut -f1))" >&2
 if [[ "$WANT_SPZ" -eq 1 ]]; then
   SPZ="${OUT%.sog}.spz"
   echo "[convert] building .spz ..." >&2
-  run_transform "$PLY" "$SPZ" && echo "[convert] wrote $SPZ ($(du -h "$SPZ" | cut -f1))" >&2 || \
+  run_transform -w "$PLY" "$SPZ" && echo "[convert] wrote $SPZ ($(du -h "$SPZ" | cut -f1))" >&2 || \
     echo "[convert] WARNING: .spz conversion failed (continuing; .sog is the primary output)" >&2
 fi
 

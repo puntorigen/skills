@@ -51,7 +51,7 @@ The macOS release ships one binary, `brush_app`. Given a **source path** it trai
 | `--max-splats` | `10000000` | Upper bound on splat count. |
 | `--export-path` | `.` (cwd) | We pass the absolute project dir. |
 | `--export-name` | `export_{iter}.ply` | We use `splat.ply` (overwritten each export); a find-newest fallback covers `{iter}` naming. |
-| `--export-every` | `5000` | We set it to the step count => one export at the end. |
+| `--export-every` | `5000` (we `1000`) | Checkpoint cadence; each export overwrites `splat.ply`. Headless Brush prints nothing, so the file's mtime is the progress signal, and a killed run keeps its last checkpoint. |
 | `--refine-every` | `200` | Densification cadence (~"images to cover the scene"). |
 | `--eval-every` | `1000` | Eval cadence. |
 | `--with-viewer` | off (headless) | Plain flag; present opens the live GUI (won't auto-exit). Absent = headless train + export + exit. |
@@ -263,8 +263,8 @@ What decides the result quality:
 | Frame extraction | seconds - a minute |
 | COLMAP SfM (50-200 frames) | ~10-30 min |
 | COLMAP SfM (900+ frames, fast-tour settings) | ~20 min (matching ~8, mapping ~12) |
-| Brush training | measured ~1.5 min / 1000 steps on M4 Pro, ~400 images (2k smoke ~2.5 min, 30k ~45 min); budget 2-4x on older chips / more frames |
-| SOG compression | seconds - a minute |
+| Brush training (measured, M4 Pro) | single room ~100 imgs: ~1.3 min / 1000 steps (4k in ~5 min). Full floor ~400 imgs: ~3.4 min / 1000 steps (30k in ~1h45m). Per-step cost grows with splat count, so big scenes are super-linear - budget 2x+ on older chips |
+| SOG compression | ~1-2 min for a 400 MB ply (falls back to CPU automatically) |
 
 A 2000-step smoke run end-to-end is typically well under ~30 min including SfM -
 always do it before a long full run, and **look at the result in the preview**

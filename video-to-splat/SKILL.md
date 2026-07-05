@@ -227,10 +227,15 @@ bash "$SKILL_DIR/scripts/train_splat.sh" my-tour --steps 30000
 - `--sh-degree 2` (default) keeps files smaller; raise to 3 for shinier view-
   dependent highlights at the cost of size. `--with-viewer` opens Brush's live
   training GUI (it won't auto-exit; use for interactive runs only).
-- **Runtime is real**: measured ~1.5 min per 1000 steps on an M4 Pro with ~400
-  training images (2000-step smoke ~2.5 min, 30k full run ~45 min). Slower
-  Apple Silicon or bigger frame sets can push a 30k run toward 1.5-2 h. Start
-  it and do other work; tell the user the expected wait up front.
+- **Runtime is real and scales with scene size** (per-step cost grows as the
+  splat count densifies). Measured on an M4 Pro: a single room (~100 images)
+  ~1.3 min per 1000 steps (4k validation ~5 min); a full house floor
+  (~400 images) ~3.4 min per 1000 steps (**30k full run ~1h45m**). Start it
+  and do other work; tell the user the expected wait up front, and give the
+  pessimistic number.
+- Progress: headless Brush prints nothing, but `splat.ply` is (over)written
+  every `--export-every` steps (default 1000) - watch its mtime to gauge
+  progress; a killed run keeps the last checkpoint.
 
 ### Step 6: Compress for the web
 
