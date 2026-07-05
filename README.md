@@ -85,8 +85,10 @@ npx skills add puntorigen/skills@video-to-splat -g -y
 
 Turn an mp4 of an orbited object into a clean, browser-navigable Gaussian splat
 **and** a watertight, millimeter-scaled STL/GLB mesh for 3D printing. Extends the
-`video-to-splat` pipeline with automatic splat cleanup and Poisson mesh
-extraction (open3d + trimesh).
+`video-to-splat` pipeline with automatic splat cleanup and printable mesh
+extraction - Poisson reconstruction plus base-down orientation, voxel
+solidify and a flat print base, with in-browser Splat and Print previews
+(open3d + trimesh + scikit-image).
 
 ```bash
 npx skills add puntorigen/skills@object-to-3d -g -y

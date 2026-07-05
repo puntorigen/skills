@@ -12,11 +12,14 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
 
+// 'glb' is the repaired, watertight print mesh (Print Preview); the others are
+// raw Gaussian-splat scan data (Splat Preview).
 type SceneDesc = {
   file: string;
-  type: 'ply' | 'splat' | 'spz' | 'ksplat';
+  type: 'ply' | 'splat' | 'spz' | 'ksplat' | 'glb';
   up?: number[];
 };
 
@@ -34,10 +37,13 @@ function showError(message: string) {
 
 async function resolveScene(): Promise<SceneDesc> {
   const params = new URLSearchParams(location.search);
+  const printMode = params.get('mode') === 'print';
   const url = params.get('url');
   if (url) {
     const ext = (url.split('.').pop() || 'ply').toLowerCase();
-    const type = (['ply', 'splat', 'spz', 'ksplat'].includes(ext) ? ext : 'ply') as SceneDesc['type'];
+    let type = (['ply', 'splat', 'spz', 'ksplat', 'glb'].includes(ext)
+      ? ext : 'ply') as SceneDesc['type'];
+    if (printMode) type = 'glb';   // ?mode=print forces the mesh path
     return { file: url, type };
   }
   const resp = await fetch('/scene.json', { cache: 'no-store' });
@@ -47,7 +53,9 @@ async function resolveScene(): Promise<SceneDesc> {
       'or open the page with ?url=<splat url>.',
     );
   }
-  return (await resp.json()) as SceneDesc;
+  const desc = (await resp.json()) as SceneDesc;
+  if (printMode) desc.type = 'glb';
+  return desc;
 }
 
 function sceneFormat(type: SceneDesc['type']): number {
@@ -370,6 +378,178 @@ function syncAspect(camera: THREE.PerspectiveCamera, renderer: THREE.WebGLRender
   renderer.setSize(w, h, false);
 }
 
+/**
+ * Print Preview: load the repaired, watertight GLB mesh (the actual print
+ * geometry) instead of the raw splat. Reuses the studio pedestal + camera rig.
+ */
+async function runPrintPreview(sceneDesc: SceneDesc, params: URLSearchParams) {
+  const dprOverride = parseFloat(params.get('dpr') || '');
+  const pixelRatio = isFinite(dprOverride) && dprOverride > 0
+    ? dprOverride
+    : Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
+  const stageOn = params.get('stage') !== '0';
+
+  // Match the splat viewer's -Y-up convention so the pedestal/camera helpers are
+  // reused. The mesh is exported +Z up (base at z=0); a +90 deg X rotation stands
+  // it upright with the base resting on the pedestal.
+  const cameraUp = [0, -1, 0];
+
+  const threeScene = new THREE.Scene();
+  threeScene.background = new THREE.Color(stageOn ? 0x0a0a0f : 0x0b0b0d);
+
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 500);
+  camera.up.fromArray(cameraUp);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(pixelRatio);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  if (stageOn) {
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  }
+  container.appendChild(renderer.domElement);
+  syncAspect(camera, renderer);
+
+  const stage = new THREE.Group();
+  threeScene.add(stage);
+
+  // Print Preview is for inspecting geometry, so light it evenly (hemisphere +
+  // ambient) with a key light for form - not the moody studio rig of the splat.
+  const lightTarget = new THREE.Object3D();
+  threeScene.add(lightTarget);
+  const lightRig = new THREE.Group();
+  threeScene.add(lightRig);
+  const keyLight = new THREE.DirectionalLight(0xffffff, 1.6);
+  keyLight.castShadow = stageOn;
+  keyLight.shadow.mapSize.set(2048, 2048);
+  keyLight.target = lightTarget;
+  const fillLight = new THREE.DirectionalLight(0xbfd0ff, 0.6);
+  fillLight.target = lightTarget;
+  const rimLight = new THREE.DirectionalLight(0xffeedd, 0.5);
+  rimLight.target = lightTarget;
+  lightRig.add(keyLight, fillLight, rimLight);
+  threeScene.add(new THREE.HemisphereLight(0xcfe0ff, 0x30303a, 1.0));
+  threeScene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  if (stageOn) {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    threeScene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
+  }
+
+  hud.textContent = 'loading print mesh ...';
+  const loader = new GLTFLoader();
+  let gltf: any;
+  try {
+    gltf = await loader.loadAsync(sceneDesc.file);
+  } catch (e: any) {
+    showError(
+      `Failed to load print mesh "${sceneDesc.file}": ${e?.message || e}. ` +
+      'Run splat_to_mesh.py first to produce mesh/object.glb.',
+    );
+    return;
+  }
+
+  const model = gltf.scene;
+  model.rotation.x = Math.PI / 2;
+  model.updateMatrixWorld(true);
+  model.traverse((o: any) => {
+    if (!o.isMesh) return;
+    o.castShadow = true;
+    o.receiveShadow = true;
+    // Normalize float COLOR_0 written as 0..255 (some exporters); integer
+    // (Uint8/Uint16) attributes carry normalized=true and are handled in-shader,
+    // so leave those alone - dividing an integer array truncates it to black.
+    const col = o.geometry?.attributes?.color;
+    if (col && col.array && !col.normalized &&
+        (col.array instanceof Float32Array || col.array instanceof Float64Array)) {
+      let mx = 0;
+      for (let i = 0; i < col.array.length; i++) {
+        if (col.array[i] > mx) mx = col.array[i];
+      }
+      if (mx > 1.5) {
+        for (let i = 0; i < col.array.length; i++) col.array[i] /= 255;
+        col.needsUpdate = true;
+      }
+    }
+    if (o.material) {
+      o.material.vertexColors = !!col;
+      o.material.metalness = 0.0;
+      o.material.roughness = 0.9;
+      o.material.side = THREE.DoubleSide;
+      o.material.needsUpdate = true;
+    }
+  });
+  threeScene.add(model);
+
+  const box = new THREE.Box3().setFromObject(model);
+  if (box.isEmpty()) {
+    box.set(new THREE.Vector3(-1, -1, -1), new THREE.Vector3(1, 1, 1));
+  }
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const radius = Math.max(Math.max(size.x, size.y, size.z) * 0.55, 0.05);
+  lightTarget.position.copy(center);
+  if (stageOn) {
+    buildPedestal(stage, box, radius);
+    keyLight.shadow.camera.near = 0.01;
+    keyLight.shadow.camera.far = radius * 30;
+    const s = radius * 2.0;
+    keyLight.shadow.camera.left = -s;
+    keyLight.shadow.camera.right = s;
+    keyLight.shadow.camera.top = s;
+    keyLight.shadow.camera.bottom = -s;
+    keyLight.shadow.camera.updateProjectionMatrix();
+  }
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.screenSpacePanning = true;
+  controls.minDistance = Math.max(radius * 0.15, 0.01);
+  controls.maxDistance = radius * 40;
+
+  const reset = frameCamera(camera, controls, center, radius);
+
+  const syncLights = () => {
+    if (!stageOn) return;
+    const target = controls.target;
+    const az = Math.atan2(camera.position.x - target.x, camera.position.z - target.z);
+    const r = 6;
+    keyLight.position.set(
+      target.x + Math.sin(az) * r, target.y - 2.5, target.z + Math.cos(az) * r,
+    );
+    fillLight.position.set(
+      target.x - Math.sin(az) * r * 0.55, target.y - 1.2, target.z - Math.cos(az) * r * 0.55,
+    );
+    rimLight.position.set(target.x, target.y + 3, target.z);
+  };
+  syncLights();
+  controls.addEventListener('change', syncLights);
+  installKeyboardOrbit(controls, camera, new THREE.Vector3().fromArray(cameraUp), reset, syncLights);
+  window.addEventListener('resize', () => syncAspect(camera, renderer));
+
+  (window as any).__printModel = model;
+  (window as any).__camera = camera;
+  (window as any).__renderer = renderer;
+
+  const animate = () => {
+    requestAnimationFrame(animate);
+    controls.update();
+    syncLights();
+    renderer.render(threeScene, camera);
+  };
+  animate();
+
+  const dims = `${size.x.toFixed(1)} x ${size.z.toFixed(1)} x ${size.y.toFixed(1)}`;
+  hud.textContent =
+    `PRINT PREVIEW - repaired watertight mesh (${dims}) · orbit: drag / arrows (WASD) · ` +
+    'zoom: wheel / +− · R: reset';
+  setTimeout(() => { hud.style.opacity = '0.35'; }, 7000);
+  hud.style.transition = 'opacity .6s';
+}
+
 async function main() {
   const params = new URLSearchParams(location.search);
   const dprOverride = parseFloat(params.get('dpr') || '');
@@ -379,6 +559,12 @@ async function main() {
   const stageOn = params.get('stage') !== '0';
 
   const sceneDesc = await resolveScene();
+
+  if (sceneDesc.type === 'glb') {
+    await runPrintPreview(sceneDesc, params);
+    return;
+  }
+
   hud.textContent = `loading ${sceneDesc.type.toUpperCase()} ...`;
 
   const cameraUp = sceneDesc.up ?? [0, -1, 0];

@@ -35,10 +35,16 @@ flowchart LR
   Ex --> Colmap["run_colmap.py<br/>exhaustive matcher"]
   Colmap --> Brush["train_splat.sh<br/>Brush (Metal) -> splat.ply"]
   Brush --> Clean["clean_splat.py<br/>opacity + scale + plane + DBSCAN"]
-  Clean --> Prev["preview.sh<br/>orbit viewer (cleaned.ply)"]
-  Clean --> Mesh["splat_to_mesh.py<br/>Poisson -> watertight STL + GLB"]
-  Mesh --> Stl["object.stl (print)<br/>object.glb (web)"]
+  Clean --> Prev["preview.sh<br/>Splat Preview (cleaned.ply)"]
+  Clean --> Mesh["splat_to_mesh.py<br/>Poisson -> orient -> solidify -> flat base"]
+  Mesh --> Stl["object.stl (watertight print)<br/>object.glb (web)"]
+  Stl --> PrintPrev["preview.sh --print<br/>Print Preview (object.glb)"]
 ```
+
+Two browser previews serve different jobs: **Splat Preview** shows the raw scan
+(honest capture quality, may show holes on faces the camera never saw, like the
+underside); **Print Preview** shows the repaired, watertight mesh that actually
+gets printed.
 
 Everything lives **outside the repo** under `~/.video-to-splat/` (shared with
 video-to-splat: same venv, Brush binary, and `projects/`), plus an orbit viewer
@@ -89,8 +95,9 @@ Copy this checklist and track progress:
 - [ ] 4. Smoke-train ~2000 steps to validate poses before committing time
 - [ ] 5. Full train (train_splat.sh, default 30000 steps) -> splat.ply
 - [ ] 6. Clean the splat (clean_splat.py) -> cleaned.ply ; preview.sh to verify, iterate flags
-- [ ] 7. Extract the mesh (splat_to_mesh.py --size-mm N) -> object.stl + object.glb + turntable PNGs
-- [ ] 8. Deliver: cleaned.ply (navigable) + object.stl (printable)
+- [ ] 7. Extract the mesh (splat_to_mesh.py --size-mm N) -> watertight object.stl + object.glb + turntable PNGs
+- [ ] 8. Verify the print mesh in the browser (preview.sh --print) and check the watertight report
+- [ ] 9. Deliver: cleaned.ply (navigable) + object.stl (printable)
 ```
 
 ### Step 2: Extract frames
@@ -178,26 +185,73 @@ the orbit viewer exactly like the trained splat.
 "$PY" "$SKILL_DIR/scripts/splat_to_mesh.py" my-object --size-mm 80
 ```
 
-- Densifies each Gaussian into oriented surface samples, estimates normals,
-  runs **Poisson reconstruction**, trims low-density fringe, keeps the largest
-  connected component, fills holes and checks **watertightness** (reports
-  volume + dimensions).
+- Densifies each Gaussian into oriented surface samples, estimates normals, runs
+  **Poisson reconstruction**, trims the low-density fringe, and keeps the largest
+  connected component.
+- Then makes it **actually printable** (see below): orients the object's largest
+  flat face down, **solidifies** it into a guaranteed-watertight manifold that is
+  also **tunnel-free** (voxel closing seals hole-like tunnels through thin
+  walls), and cuts a **flat print base**. Reports watertightness, **genus**
+  (0 = no through-holes anywhere), dimensions and volume.
 - `--size-mm N` scales the longest dimension to **N millimeters** (STL's de-facto
   unit) - SfM has no metric scale, so **you must set the real size** for a
   correct print. Default 100 mm.
 - Outputs into `projects/my-object/mesh/`:
   - `object.stl` - watertight mesh for the slicer (print),
-  - `object.glb` - colored mesh for the web / macOS QuickLook,
-  - `turntable-*.png` - offscreen-rendered thumbnails for a quick visual check.
+  - `object.glb` - colored, oriented mesh for the web / Print Preview / QuickLook,
+  - `object-turntable-*.png` - quick software-rendered thumbnails to eyeball it.
 - Prefers `cleaned.ply`; pass `--file splat.ply` to mesh the raw splat, or
   `--no-densify` for a faster (coarser) pass. Raise `--depth` (Poisson octree,
   default 9) for more detail at the cost of noise/time.
 
-### Step 8: Deliver
+**How holes get closed (and why).** An object filmed sitting on a surface is
+never seen from below, and `clean_splat.py` also strips the support plane - so
+the raw scan has a hole where the contact face should be, plus smaller gaps
+wherever coverage was thin. A Gaussian splat has no topology, so this can only
+be fixed on the *mesh*. Note that "watertight" alone is NOT enough: a mesh can
+be topologically closed yet riddled with **through-tunnels** (like a donut) that
+read as holes and ruin the print. By default (`--base-repair auto`) the script
+keeps Poisson's fully closed surface (no density trimming), voxel-remeshes it
+with **morphological closing** into a single solid with **genus 0** - watertight
+*and* tunnel-free - and slices a flat base anchored to the lowest scan points.
+The result sits flat on the print bed and slices cleanly. Surfaces the camera
+never saw (underside, deep creases) are **generated, not faithful scan detail**.
+
+- **Want the true underside?** Capture it: flip the object and run a second pass,
+  or shoot it elevated (on a clear stand) so the camera sees under it.
+- **Just want a solid, stable print** (shoes, toys, product mockups)? The default
+  flat base is ideal - no extra capture needed.
+- Tuning: `--base-cut` (how much of the ragged bottom to trim, default 3%,
+  anchored to the lowest scan points), `--voxel` (solidify resolution; higher =
+  more detail but tunnels reappear sooner - raise `--close` together with it),
+  `--close` (tunnel-sealing strength), `--base-repair flat|none`,
+  `--solidify always|none`, `--smooth N` (Taubin).
+- **Strict by default:** if the mesh can't be made watertight the script writes
+  an inspection GLB, prints why, and **exits non-zero** rather than emit a
+  questionable STL. Pass `--allow-open` to force export anyway. **Always check
+  the `genus` line**: if it is > 0 the surface still has that many hole-like
+  tunnels - raise `--close` (e.g. 4) or lower `--voxel` and re-run.
+
+### Step 8: Verify the print mesh
+
+Look at the **actual print geometry** (not the holey scan) in the browser:
+
+```bash
+bash "$SKILL_DIR/scripts/preview.sh" my-object --print      # loads mesh/object.glb
+```
+
+This Print Preview stands the repaired mesh on the pedestal so you can confirm
+the flat base and closed surface before slicing. The plain `preview.sh my-object`
+still shows the raw Splat Preview (scan data). Also check the report from Step 7:
+`watertight : True` **and** `genus : 0` together mean there are no holes or
+tunnels anywhere in the print mesh.
+
+### Step 9: Deliver
 
 Deliverables live under `~/.video-to-splat/projects/my-object/`:
-`cleaned.ply` (navigable object splat), `mesh/object.stl` (printable),
-`mesh/object.glb` (web view), and the intermediate `splat.ply` master.
+`cleaned.ply` (navigable object splat), `mesh/object.stl` (watertight printable),
+`mesh/object.glb` (web view / Print Preview), and the intermediate `splat.ply`
+master.
 
 ## Capture guidance (the #1 quality lever)
 
@@ -212,8 +266,10 @@ Object reconstruction quality is set on the camera far more than in any flag:
   looks static against a moving world; orbit the camera instead.)
 - **Lock exposure and focus**, use bright, even, diffuse light (no hard shadows
   that move with the object, no hotspots/specular glare).
-- **Cover the whole surface**, including the top; the bottom (contact face) can't
-  be seen and will be closed by Poisson - expect a flat/filled base there.
+- **Cover the whole surface**, including the top. The bottom (contact face) can't
+  be seen from a normal orbit; the mesh stage closes it with a generated **flat
+  base**. If you need the real underside, do a **second pass with the object
+  flipped** (or elevated on a clear stand) so the camera sees under it.
 - **Avoid** mirrors, glass, chrome, thin transparent parts and featureless matte
   surfaces - SfM and splatting both struggle with them.
 
@@ -241,11 +297,19 @@ Object reconstruction quality is set on the camera far more than in any flag:
 | | `--radius` / `--center` | off | Manual spherical crop after the preview. |
 | splat_to_mesh.py | `--size-mm` | `100` | Scale longest dimension to N mm (set the real size!). |
 | | `--depth` | `9` | Poisson octree depth (detail vs. noise/time). |
-| | `--density-quantile` | `0.03` | Trim this low-density fraction of Poisson output. |
+| | `--density-quantile` | `0`/`0.03` | Trim low-density Poisson fringe (0 while base repair is active - trimming punches holes; 0.03 with `--base-repair none`). |
 | | `--samples-per-splat` | `4` | Surface samples per Gaussian (densify). |
 | | `--no-densify` | off | Use Gaussian centers only (faster, coarser). |
+| | `--base-repair` | `auto` | Orient + flat printable base (`auto`/`flat`/`none`). |
+| | `--base-cut` | `0.03` | Flat-base cut height (fraction, anchored to the lowest scan points). |
+| | `--solidify` | `auto` | Voxel-remesh to watertight, tunnel-free solid (`auto`/`always`/`none`). |
+| | `--voxel` | `200` | Solidify resolution (voxels across bbox diagonal). |
+| | `--close` | `2` | Voxel closing iterations; seals hole-like tunnels (raise if genus > 0). |
+| | `--smooth` | `0` | Taubin smoothing iterations on the final mesh. |
+| | `--allow-open` | off | Export STL even if not watertight (default: refuse). |
 | | `--file` | `cleaned.ply` | Which splat to mesh (falls back to splat.ply). |
-| preview.sh | `--file` | auto | Specific file to load (e.g. `cleaned.ply`). |
+| preview.sh | `--print` | off | Show the repaired print mesh (`mesh/object.glb`). |
+| | `--file` | auto | Specific file to load (e.g. `cleaned.ply`, `object.glb`). |
 | | `--port` | `5173` | Vite port. |
 
 ## Anti-patterns
@@ -259,8 +323,12 @@ Object reconstruction quality is set on the camera far more than in any flag:
 - **Plain white background / turntable-with-fixed-camera capture.** Both starve
   COLMAP of trackable features and usually fail to register - orbit the camera
   around an object on a textured surface.
-- **Expecting a printable bottom.** The contact face is never seen; Poisson
-  closes it flat. Orient the print accordingly.
+- **Expecting a faithful bottom.** The contact face is never seen; the mesh stage
+  generates a **flat base** so the print is watertight and stands up - it is not a
+  scan of the real underside. Flip-and-rescan if you need true bottom detail.
+- **Judging printability from the Splat Preview.** The splat is honest scan data
+  and *will* look holey underneath. Use `preview.sh --print` (the repaired GLB)
+  and the `watertight : True` report to judge the actual print.
 - **Committing anything under `~/.video-to-splat/`** into a repo - large and
   regenerable.
 

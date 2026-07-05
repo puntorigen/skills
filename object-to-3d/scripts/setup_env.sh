@@ -5,7 +5,8 @@
 #
 # Shares the video-to-splat data root (~/.video-to-splat): same uv venv, same
 # Brush training binary, same projects/. On top of that it adds:
-#   - open3d + trimesh in the venv (splat cleanup + Poisson mesh extraction)
+#   - open3d + trimesh + scikit-image in the venv (splat cleanup + Poisson mesh
+#     extraction + watertight voxel solidify)
 #   - a separate Three.js orbit viewer app in ~/.video-to-splat/viewer-object/
 #     (video-to-splat's viewer/ is a first-person walker; objects want orbit)
 #
@@ -78,10 +79,11 @@ fi
 PY="$VENV/bin/python"
 echo "[setup] installing pycolmap + frame-scoring deps (first run downloads wheels)" >&2
 uv pip install --python "$PY" --upgrade pycolmap "opencv-python-headless" numpy pillow >&2
-echo "[setup] installing mesh deps: open3d + trimesh[easy] (~100 MB first run)" >&2
+echo "[setup] installing mesh deps: open3d + trimesh[easy] + scikit-image (~100 MB first run)" >&2
 # trimesh[easy] pulls networkx + scipy etc. needed by repair.fill_holes,
-# connected-components and hole detection used by splat_to_mesh.py
-uv pip install --python "$PY" --upgrade open3d "trimesh[easy]" >&2
+# connected-components and hole detection; scikit-image provides marching cubes
+# for the watertight voxel solidify in splat_to_mesh.py (--base-repair).
+uv pip install --python "$PY" --upgrade open3d "trimesh[easy]" scikit-image >&2
 
 if "$PY" -c "import pycolmap" >/dev/null 2>&1; then
   echo "[setup] pycolmap import OK ($("$PY" -c 'import pycolmap; print(pycolmap.__version__)'))" >&2
@@ -89,10 +91,10 @@ else
   echo "[setup] WARNING: 'import pycolmap' failed. On Intel Macs / old macOS there is" >&2
   echo "[setup]          no wheel; reconstruction will not work here." >&2
 fi
-if "$PY" -c "import open3d, trimesh" >/dev/null 2>&1; then
-  echo "[setup] open3d + trimesh import OK ($("$PY" -c 'import open3d; print("open3d", open3d.__version__)'))" >&2
+if "$PY" -c "import open3d, trimesh, skimage" >/dev/null 2>&1; then
+  echo "[setup] open3d + trimesh + skimage import OK ($("$PY" -c 'import open3d; print("open3d", open3d.__version__)'))" >&2
 else
-  echo "[setup] WARNING: 'import open3d' or 'import trimesh' failed - clean_splat.py /" >&2
+  echo "[setup] WARNING: 'import open3d/trimesh/skimage' failed - clean_splat.py /" >&2
   echo "[setup]          splat_to_mesh.py will not run. Check the pip output above." >&2
 fi
 

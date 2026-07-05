@@ -8,8 +8,18 @@ each Gaussian is a flat-ish ellipsoid, so we sample points on the disk spanned b
 its two largest axes and take the smallest axis as the surface normal. Then:
 
   densify -> orient normals outward -> Poisson -> trim low-density fringe ->
-  largest connected component -> fill holes / watertight check -> scale to mm ->
+  largest connected component -> ORIENT base down -> BASE REPAIR (flat, watertight)
+  -> watertight validation -> scale to mm ->
   export object.stl (print) + object.glb (web) + turntable-*.png (checks)
+
+Why the base repair: an object filmed sitting on a table is never seen from
+below, and clean_splat.py also strips the support surface, so the underside is a
+hole. A Gaussian splat has no topology, so this can only be fixed on the MESH.
+We orient the object so its largest flat face points down, then cut the ragged
+open underside with a horizontal plane and cap it - producing a flat, watertight
+base ideal for slicing (and a stable print bed contact). The generated base is
+printable but not a faithful scan of the real underside; capture the bottom too
+(flip the object, second pass) if you need the true geometry.
 
 SfM has no metric scale, so pass --size-mm N to set the object's real longest
 dimension (STL/GLB carry no units but slicers assume mm).
@@ -119,7 +129,349 @@ def densify(splat, k, rng):
     return points, normals, colors
 
 
-def software_turntable(vertices, faces, vcolors, out_dir, base_name, n_frames=4,
+def find_contact_normal(points, rng, iters=320):
+    """Largest flat RESTING face of the point cloud -> its outward unit normal.
+
+    A face the object can rest on is, by definition, a support plane of its
+    convex hull - so instead of RANSAC-ing random planes (which can land on a
+    diagonal slice or the wrong side, flipping the object), we enumerate convex
+    hull facet planes (their normals point outward for free) and score each by:
+
+      support area (in-plane PCA spread of the points near the plane, so a big
+      sole ring wins over a thin top ridge) x sqrt(population), requiring the
+      centroid to project inside the support region (resting stability).
+
+    Deterministic. Returns the outward normal of the best face (the direction
+    that should face the print bed), or None.
+    """
+    n_pts = len(points)
+    if n_pts < 30:
+        return None
+    lo = points.min(axis=0)
+    hi = points.max(axis=0)
+    diag = float(np.linalg.norm(hi - lo))
+    if diag < 1e-9:
+        return None
+    thresh = max(diag * 0.012, 1e-4)
+    min_inliers = max(40, int(0.02 * n_pts))
+    max_beyond = max(20, int(0.02 * n_pts))
+    centroid = points.mean(axis=0)
+
+    def score_face(n, d):
+        """Score an OUTWARD-oriented candidate plane (n.x + d = 0, inside <= 0)."""
+        signed = points @ n + d
+        if int((signed > thresh).sum()) > max_beyond:   # not extremal
+            return 0.0
+        mask = signed >= -thresh                        # support points on the face
+        cnt = int(mask.sum())
+        if cnt < min_inliers:
+            return 0.0
+        ref = np.array([0.0, 0.0, 1.0]) if abs(n[2]) < 0.9 else np.array([1.0, 0.0, 0.0])
+        t = np.cross(ref, n)
+        tn = np.linalg.norm(t)
+        if tn < 1e-9:
+            return 0.0
+        t /= tn
+        b = np.cross(n, t)
+        P = points[mask]
+        u = P @ t
+        v = P @ b
+        su, sv = float(u.std()), float(v.std())
+        area = (4.0 * su) * (4.0 * sv)                  # PCA-ish support footprint
+        if area <= 0:
+            return 0.0
+        # stability: center of mass must project inside the support spread
+        if abs(float(centroid @ t) - float(u.mean())) > 2.2 * su:
+            return 0.0
+        if abs(float(centroid @ b) - float(v.mean())) > 2.2 * sv:
+            return 0.0
+        return area * float(np.sqrt(cnt))
+
+    # candidate planes: convex hull facets (deduped) + AABB faces as backstop
+    cands = []
+    try:
+        from scipy.spatial import ConvexHull
+        sub = points if n_pts <= 12000 else \
+            points[rng.choice(n_pts, 12000, replace=False)]
+        hull = ConvexHull(sub)
+        seen = set()
+        for eq in hull.equations:                       # n.x + d = 0, n outward
+            n = eq[:3]
+            d = float(eq[3])
+            key = (round(n[0], 1), round(n[1], 1), round(n[2], 1),
+                   round(d / diag, 2))
+            if key in seen:
+                continue
+            seen.add(key)
+            cands.append((np.asarray(n, float), d))
+    except Exception as e:
+        eprint(f"[mesh] convex hull failed ({e}); using AABB faces only")
+    for idx in range(3):
+        for sign, face in ((1.0, hi[idx]), (-1.0, lo[idx])):
+            n = np.zeros(3)
+            n[idx] = sign
+            cands.append((n, float(-sign * face)))
+
+    best = None
+    for n, d in cands:
+        s = score_face(n, d)
+        if s > 0 and (best is None or s > best[0]):
+            best = (s, n)
+    if best is None:
+        return None
+    n = best[1]
+    return n / (np.linalg.norm(n) or 1.0)
+
+
+def orient_base_down(mesh, contact_normal, T):
+    """Rotate `mesh` so contact_normal -> world -Z, then drop min Z to 0.
+
+    Mutates `mesh` and returns the updated original->current transform (4x4),
+    composed onto `T`.
+    """
+    import trimesh
+
+    M = trimesh.geometry.align_vectors(contact_normal, np.array([0.0, 0.0, -1.0]))
+    mesh.apply_transform(M)
+    T = M @ T
+    dz = -float(mesh.bounds[0][2])
+    Tr = trimesh.transformations.translation_matrix([0.0, 0.0, dz])
+    mesh.apply_transform(Tr)
+    T = Tr @ T
+    return T
+
+
+def keep_largest_component(mesh):
+    parts = mesh.split(only_watertight=False)
+    if len(parts) > 1:
+        parts = sorted(parts, key=lambda m: len(m.faces), reverse=True)
+        return parts[0]
+    return mesh
+
+
+def _poisson_worker(in_npz, out_npz, depth, jitter, seed):
+    """Run Poisson in a child process (open3d's PoissonRecon can hard-abort the
+    whole process on a 'Failed to close loop' iso-surface bug, so we isolate it).
+    Writes vertices/faces/densities to out_npz on success; writes nothing on abort.
+    """
+    import numpy as np
+    import open3d as o3d
+    d = np.load(in_npz)
+    points = d["points"].astype(np.float64)
+    normals = d["normals"].astype(np.float64)
+    if jitter > 0:
+        points = points + np.random.default_rng(seed).normal(0.0, jitter, points.shape)
+    pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points))
+    pcd.normals = o3d.utility.Vector3dVector(normals)
+    with o3d.utility.VerbosityContextManager(o3d.utility.VerbosityLevel.Error):
+        mesh, dens = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
+            pcd, depth=depth, linear_fit=False)
+    v = np.asarray(mesh.vertices)
+    f = np.asarray(mesh.triangles)
+    if len(f) == 0:
+        return
+    np.savez(out_npz, v=v, f=f, d=np.asarray(dens))
+
+
+def poisson_reconstruct(points, normals, depth, attempts=5):
+    """Poisson surface reconstruction, isolated + retried.
+
+    open3d's bundled PoissonRecon intermittently aborts the process on certain
+    octree configs ('Failed to close loop'). We run it in a spawned subprocess so
+    an abort can't kill us, and retry with a tiny point jitter (and a slightly
+    lower depth as a last resort) until it succeeds. Returns (V, F, densities).
+    """
+    import multiprocessing as mp
+    import tempfile
+
+    diag = float(np.linalg.norm(points.max(0) - points.min(0))) or 1.0
+    ctx = mp.get_context("spawn")
+    tmpdir = tempfile.mkdtemp(prefix="o3d_poisson_")
+    in_npz = os.path.join(tmpdir, "in.npz")
+    np.savez(in_npz, points=points.astype(np.float64), normals=normals.astype(np.float64))
+
+    try:
+        for k in range(attempts):
+            jitter = 0.0 if k == 0 else diag * 2e-4 * k
+            d = depth if k < attempts - 1 else max(6, depth - 1)
+            out_npz = os.path.join(tmpdir, f"out{k}.npz")
+            p = ctx.Process(target=_poisson_worker,
+                            args=(in_npz, out_npz, d, jitter, k))
+            p.start()
+            p.join()
+            if os.path.exists(out_npz):
+                with np.load(out_npz) as r:
+                    return r["v"], r["f"], r["d"]
+            if k == 0:
+                eprint("[mesh] Poisson aborted (open3d 'Failed to close loop'); "
+                       "retrying with jittered input ...")
+            else:
+                eprint(f"[mesh] Poisson retry {k} (jitter {jitter:.2g}"
+                       f"{', depth ' + str(d) if d != depth else ''}) ...")
+        return None, None, None
+    finally:
+        import shutil
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _rezero_base(mesh, T):
+    """Translate so the mesh sits on z=0; compose the move into transform T."""
+    import trimesh
+    dz = -float(mesh.bounds[0][2])
+    Tr = trimesh.transformations.translation_matrix([0.0, 0.0, dz])
+    mesh.apply_transform(Tr)
+    return Tr @ T
+
+
+def voxel_solidify(mesh, res, close_iters=2):
+    """Shrink-wrap the mesh into a guaranteed-watertight manifold solid.
+
+    Poisson output of a scan is often multi-shell / non-manifold and open on the
+    unseen underside, so no amount of hole-filling makes it print-safe. We
+    rasterize it to a voxel grid, morphologically CLOSE it (dilate+erode, sealing
+    through-holes/tunnels in thin walls up to ~2*close_iters voxels wide), fill
+    enclosed cavities, and re-extract with marching cubes: the result is always a
+    single closed manifold. Detail is limited by the voxel pitch
+    (bbox diagonal / res).
+    """
+    import trimesh
+    from scipy import ndimage
+    from skimage import measure
+
+    pitch = float(mesh.scale) / max(32, res)
+    vg = mesh.voxelized(pitch=pitch)
+    mat = np.asarray(vg.matrix, dtype=bool)
+    # pad so closing/marching cubes never touch the array border
+    pad = int(close_iters) + 2
+    mat = np.pad(mat, pad)
+    if close_iters > 0:
+        st = ndimage.generate_binary_structure(3, 1)
+        mat = ndimage.binary_closing(mat, structure=st,
+                                     iterations=int(close_iters))
+    mat = ndimage.binary_fill_holes(mat)
+
+    verts, faces, _, _ = measure.marching_cubes(mat.astype(np.float32), level=0.5)
+    # marching-cubes vertices are in (padded) voxel-index space; unpad and map
+    # back to the input mesh's world frame so downstream transforms/colors match.
+    verts = verts - pad
+    solid = trimesh.Trimesh(vertices=verts, faces=faces, process=True)
+    solid.apply_transform(vg.transform)
+    solid.merge_vertices()
+    trimesh.repair.fix_normals(solid)
+    return keep_largest_component(solid)
+
+
+def flat_cut(mesh, z0):
+    """Cut everything below z0 and cap the cross-section (flat base)."""
+    import trimesh
+    import trimesh.intersections as ti
+    sliced = ti.slice_mesh_plane(
+        mesh, plane_normal=[0, 0, 1], plane_origin=[0, 0, z0], cap=True)
+    if sliced is None or len(sliced.faces) == 0:
+        return None
+    sliced.merge_vertices()
+    sliced = keep_largest_component(sliced)
+    trimesh.repair.fix_normals(sliced)
+    trimesh.repair.fix_winding(sliced)
+    return sliced
+
+
+def make_printable(mesh, base_mode, base_cut, solidify_mode, voxel_res,
+                   close_iters, smooth, require_watertight, T, points=None):
+    """Turn the reconstructed surface into a watertight, flat-based print mesh.
+
+    Order: solidify (watertight + tunnel-sealing guarantee) -> smooth
+    (de-blockify voxel result) -> flat base cut (stable, flat bed contact).
+    Assumes `mesh` is already oriented base-down. `points` are the input surface
+    samples in the ORIGINAL frame; when given, the base cut height is anchored to
+    the object's real lowest scan data instead of the (possibly ballooned) mesh
+    bottom. Returns (mesh, watertight, note, T).
+    """
+    import trimesh
+
+    if base_mode == "none":
+        if smooth > 0:
+            try:
+                import open3d as o3d
+                om = o3d.geometry.TriangleMesh(
+                    o3d.utility.Vector3dVector(np.asarray(mesh.vertices)),
+                    o3d.utility.Vector3iVector(np.asarray(mesh.faces)))
+                om = om.filter_smooth_taubin(number_of_iterations=smooth)
+                mesh = trimesh.Trimesh(np.asarray(om.vertices),
+                                       np.asarray(om.triangles), process=True)
+                trimesh.repair.fix_normals(mesh)
+            except Exception as e:
+                eprint(f"[mesh] smooth skipped ({e})")
+        return mesh, bool(mesh.is_watertight), "none (left as reconstructed)", T
+
+    T = _rezero_base(mesh, T)
+    notes = []
+
+    # 1. watertight guarantee via voxel remesh (all holes/shells closed at once)
+    did_solidify = False
+    genus = None
+    if mesh.is_watertight:
+        genus = int(round((2 - mesh.euler_number) / 2))
+    # A watertight surface can still be riddled with through-tunnels (genus > 0)
+    # that read as "holes" and weaken the print, so 'auto' also solidifies then.
+    do_solid = solidify_mode == "always" or (
+        solidify_mode == "auto" and (not mesh.is_watertight or (genus or 0) > 0))
+    if do_solid:
+        try:
+            solid = voxel_solidify(mesh, voxel_res, close_iters)
+            if len(solid.faces) > 0:
+                mesh = solid
+                T = _rezero_base(mesh, T)
+                did_solidify = True
+                notes.append(f"voxel solidify (res {voxel_res}, close {close_iters})")
+        except Exception as e:
+            notes.append(f"solidify skipped ({e})")
+
+    # 2. de-blockify the voxel surface a little (Taubin preserves volume/topology)
+    eff_smooth = smooth if smooth > 0 else (3 if did_solidify else 0)
+    if eff_smooth > 0:
+        try:
+            import open3d as o3d
+            om = o3d.geometry.TriangleMesh(
+                o3d.utility.Vector3dVector(np.asarray(mesh.vertices)),
+                o3d.utility.Vector3iVector(np.asarray(mesh.faces)))
+            om = om.filter_smooth_taubin(number_of_iterations=eff_smooth)
+            mesh = trimesh.Trimesh(np.asarray(om.vertices),
+                                   np.asarray(om.triangles), process=True)
+            trimesh.repair.fix_normals(mesh)
+            T = _rezero_base(mesh, T)
+            notes.append(f"taubin x{eff_smooth}")
+        except Exception as e:
+            notes.append(f"smooth skipped ({e})")
+
+    # 3. flat base cut for a stable, printable bed contact.
+    #    Anchor the cut to the REAL scan data: Poisson can balloon below the
+    #    object where nothing was seen, and cutting a % of the inflated mesh
+    #    height would leave that balloon as a fake pedestal.
+    height = float(mesh.bounds[1][2] - mesh.bounds[0][2])
+    if height > 0:
+        if points is not None and len(points):
+            pz = (T[:3, :3] @ points.T).T[:, 2] + T[2, 3]
+            z_low = float(np.percentile(pz, 1.0))
+            z_span = float(np.percentile(pz, 99.0) - z_low) or height
+            z0 = z_low + max(base_cut, 1e-4) * z_span
+            z0 = min(max(z0, float(mesh.bounds[0][2])),
+                     float(mesh.bounds[0][2]) + 0.45 * height)
+        else:
+            z0 = max(base_cut, 1e-4) * height
+        cut = flat_cut(mesh, z0)
+        if cut is not None and len(cut.faces) > 0 and \
+                (cut.is_watertight or not require_watertight):
+            mesh = cut
+            T = _rezero_base(mesh, T)
+            notes.append(f"flat base @ {base_cut * 100:.1f}%")
+        else:
+            notes.append("flat base cut skipped (would open the mesh)")
+
+    return mesh, bool(mesh.is_watertight), "; ".join(notes) or "no-op", T
+
+
+def software_turntable(vertices, faces, vcolors, out_dir, base_name, up, n_frames=4,
                        size=640):
     """Tiny dependency-free painter's-algorithm renderer for verification thumbs.
 
@@ -133,8 +485,11 @@ def software_turntable(vertices, faces, vcolors, out_dir, base_name, n_frames=4,
     c = V.mean(axis=0)
     radius = float(np.linalg.norm(V - c, axis=1).max()) or 1.0
 
-    up = np.array([0.0, -1.0, 0.0])                # COLMAP/OpenCV up is -Y
+    up = np.asarray(up, dtype=np.float64)
+    up = up / (np.linalg.norm(up) or 1.0)
     ref = np.array([1.0, 0.0, 0.0])
+    if abs(float(up @ ref)) > 0.9:
+        ref = np.array([0.0, 1.0, 0.0])
     ex = np.cross(up, ref); ex /= (np.linalg.norm(ex) or 1)
     ez = np.cross(up, ex)
     el = np.radians(20.0)
@@ -202,18 +557,54 @@ def main(argv=None):
                         "set the object's real size for a correct print). 0 = keep scene units")
     p.add_argument("--depth", type=int, default=9,
                    help="Poisson octree depth (default 9; 8 smoother, 10+ finer/noisier)")
-    p.add_argument("--density-quantile", type=float, default=0.03, dest="density_quantile",
-                   help="trim this low-density fraction of Poisson vertices (default 0.03)")
+    p.add_argument("--density-quantile", type=float, default=None, dest="density_quantile",
+                   help="trim this low-density fraction of Poisson vertices "
+                        "(default: 0 when base repair is active - trimming punches "
+                        "holes in Poisson's closed surface, and the solidify + "
+                        "data-anchored base cut handle balloons instead; 0.03 "
+                        "with --base-repair none)")
     p.add_argument("--samples-per-splat", type=int, default=4, dest="spp",
                    help="oriented surface samples per Gaussian when densifying (default 4)")
     p.add_argument("--no-densify", action="store_true", dest="no_densify",
                    help="use Gaussian centers only (faster, coarser)")
     p.add_argument("--smooth", type=int, default=0,
                    help="Taubin smoothing iterations on the final mesh (default 0)")
+    p.add_argument("--base-repair", default="auto", dest="base_repair",
+                   choices=("auto", "flat", "none"),
+                   help="make the object printable: 'auto'/'flat' orient the "
+                        "largest flat face down, solidify to watertight, and cut a "
+                        "flat print base; 'none' leaves the reconstruction as-is "
+                        "(default auto)")
+    p.add_argument("--base-cut", type=float, default=0.03, dest="base_cut",
+                   help="how far up from the bottom to cut the flat base, as a "
+                        "fraction of object height (default 0.03). Larger removes "
+                        "more of the ragged underside.")
+    p.add_argument("--solidify", default="auto", choices=("auto", "always", "none"),
+                   help="voxel-remesh into a guaranteed-watertight solid: 'auto' "
+                        "when the reconstruction is not watertight OR still has "
+                        "through-tunnels (genus > 0), 'always' unconditionally, "
+                        "'none' never (default auto). This is what closes the "
+                        "unseen underside and seals hole-like tunnels for printing.")
+    p.add_argument("--voxel", type=int, default=200, dest="voxel_res",
+                   help="voxel resolution for --solidify (voxels across the bbox "
+                        "diagonal; default 200). Higher = more detail, slower.")
+    p.add_argument("--close", type=int, default=2, dest="close_iters",
+                   help="morphological closing iterations during --solidify; "
+                        "seals through-holes/tunnels up to ~2*N voxels wide "
+                        "(default 2). Raise if the report shows genus > 0.")
+    p.add_argument("--allow-open", action="store_false", dest="require_watertight",
+                   help="export the STL even if the mesh is not watertight "
+                        "(default: refuse and exit non-zero, since it may not slice)")
     p.add_argument("--no-turntable", action="store_true", dest="no_turntable",
                    help="skip the turntable PNG renders")
     p.add_argument("--home", default=None, help="override VIDEO_TO_SPLAT_HOME")
     args = p.parse_args(argv)
+
+    # Poisson always closes the surface; density-trimming punches holes in it.
+    # With base repair active we keep the closed surface (solidify + the
+    # data-anchored base cut deal with balloons), so trim defaults to 0 there.
+    if args.density_quantile is None:
+        args.density_quantile = 0.0 if args.base_repair != "none" else 0.03
 
     try:
         import open3d as o3d
@@ -266,11 +657,15 @@ def main(argv=None):
         eprint(f"[mesh] point cloud: {len(points)} oriented samples "
                f"({args.spp}/gaussian)")
 
-    # 2. Poisson reconstruction
+    # 2. Poisson reconstruction (subprocess-isolated + retried; see helper)
     eprint(f"[mesh] Poisson reconstruction (depth {args.depth}) ...")
-    with o3d.utility.VerbosityContextManager(o3d.utility.VerbosityLevel.Error):
-        mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
-            pcd, depth=args.depth, linear_fit=False)
+    normals = np.asarray(pcd.normals)
+    pv, pf, densities = poisson_reconstruct(points, normals, args.depth)
+    if pv is None:
+        fail("Poisson failed repeatedly (open3d 'Failed to close loop'). Try a "
+             "lower --depth, a cleaner cleaned.ply, or fewer/denser points.", code=3)
+    mesh = o3d.geometry.TriangleMesh(
+        o3d.utility.Vector3dVector(pv), o3d.utility.Vector3iVector(pf))
     densities = np.asarray(densities)
     if len(mesh.triangles) == 0:
         fail("Poisson produced an empty mesh (too few/!oriented points). Try "
@@ -294,16 +689,12 @@ def main(argv=None):
         eprint(f"[mesh] kept largest of {len(tri_counts)} components "
                f"({tri_counts[biggest]} triangles)")
 
-    if args.smooth > 0:
-        mesh = mesh.filter_smooth_taubin(number_of_iterations=args.smooth)
-        mesh.compute_vertex_normals()
-
     V = np.asarray(mesh.vertices)
     Fc = np.asarray(mesh.triangles)
     if len(V) == 0 or len(Fc) == 0:
         fail("mesh empty after cleanup; relax --density-quantile or improve the splat")
 
-    # 5. trimesh repair + watertight check
+    # 5. trimesh repair + initial hole fill
     tm = trimesh.Trimesh(vertices=V, faces=Fc, process=True)
     tm.update_faces(tm.nondegenerate_faces())
     tm.remove_unreferenced_vertices()
@@ -312,21 +703,50 @@ def main(argv=None):
     if not tm.is_watertight:
         trimesh.repair.fill_holes(tm)
         trimesh.repair.fix_normals(tm)
-    watertight = bool(tm.is_watertight)
 
-    # 6. sample vertex colors from the nearest Gaussian (robust to repair changes)
+    # 6. orient base-down + flat base repair (track original->current transform T)
+    T = np.eye(4)
+    orient_up = np.array([0.0, -1.0, 0.0])   # legacy: COLMAP/OpenCV up is -Y
+    base_note = "none"
+    watertight = bool(tm.is_watertight)
+    if args.base_repair != "none":
+        contact_pts = points if len(points) <= 60000 else \
+            points[rng.choice(len(points), 60000, replace=False)]
+        n = find_contact_normal(contact_pts, rng)
+        if n is None:
+            eprint("[mesh] orient    : could not find a contact face; skipping orient")
+        else:
+            T = orient_base_down(tm, n, T)
+            orient_up = np.array([0.0, 0.0, 1.0])   # now +Z up, base at z=0
+            eprint(f"[mesh] orient    : contact normal {np.round(n, 3)} -> base down (+Z up)")
+    tm, watertight, base_note, T = make_printable(
+        tm, args.base_repair, args.base_cut, args.solidify, args.voxel_res,
+        args.close_iters, args.smooth, args.require_watertight, T,
+        points=points)
+    eprint(f"[mesh] base      : {base_note}")
+
+    V = np.asarray(tm.vertices)
+    Fc = np.asarray(tm.faces)
+    if len(V) == 0 or len(Fc) == 0:
+        fail("mesh empty after base repair; try --base-repair none or --base-cut smaller")
+
+    # 7. sample vertex colors from the nearest Gaussian, in the ORIGINAL frame
+    #    (undo the orient/base transform T so the KD-tree matches splat.xyz()).
     try:
+        Tinv = np.linalg.inv(T)
+        verts_orig = (Tinv[:3, :3] @ tm.vertices.T).T + Tinv[:3, 3]
         kdt = o3d.geometry.KDTreeFlann(
             o3d.geometry.PointCloud(o3d.utility.Vector3dVector(splat.xyz())))
         srgb = splat.rgb()
         vcols = np.empty((len(tm.vertices), 3), dtype=np.float64)
-        for i, vert in enumerate(tm.vertices):
+        for i, vert in enumerate(verts_orig):
             _, ni, _ = kdt.search_knn_vector_3d(vert, 1)
             vcols[i] = srgb[ni[0]]
-    except Exception:
+    except Exception as e:
+        eprint(f"[mesh] color sampling skipped ({e})")
         vcols = None
 
-    # 7. scale so the longest dimension = size_mm
+    # 8. scale so the longest dimension = size_mm
     extents = tm.extents.copy()
     longest = float(extents.max())
     if args.size_mm and args.size_mm > 0 and longest > 0:
@@ -338,7 +758,29 @@ def main(argv=None):
                "for a print-ready size.")
     ext_mm = tm.extents
 
-    # 8. export STL (geometry) + GLB (colored)
+    # 9. watertight gate
+    unit = "mm" if (args.size_mm and args.size_mm > 0) else "scene units"
+    if not watertight and args.require_watertight:
+        eprint("[mesh] --------------------------------------------------")
+        eprint("[mesh] FAILURE: mesh is NOT watertight, so it may not slice/print "
+               "reliably.")
+        eprint("[mesh]   - try a fuller capture (especially the underside),")
+        eprint("[mesh]   - or --base-repair flat with a larger --base-cut,")
+        eprint("[mesh]   - or --base-repair auto (default) on a cleaner cleaned.ply,")
+        eprint("[mesh]   - or pass --allow-open to export anyway (not recommended).")
+        # still write a GLB for inspection so the user can see what happened
+        glb_path = out_dir / f"{args.name}.glb"
+        glb_mesh = tm.copy()
+        if vcols is not None:
+            rgba = np.concatenate([np.clip(vcols, 0, 1),
+                                   np.ones((len(vcols), 1))], axis=1)
+            glb_mesh.visual = trimesh.visual.color.ColorVisuals(
+                mesh=glb_mesh, vertex_colors=(rgba * 255).astype(np.uint8))
+        glb_mesh.export(glb_path)
+        eprint(f"[mesh] wrote inspection GLB (no STL): {glb_path}")
+        sys.exit(2)
+
+    # 10. export STL (geometry) + GLB (colored)
     stl_path = out_dir / f"{args.name}.stl"
     glb_path = out_dir / f"{args.name}.glb"
     tm.export(stl_path)
@@ -350,7 +792,7 @@ def main(argv=None):
             mesh=glb_mesh, vertex_colors=(rgba * 255).astype(np.uint8))
     glb_mesh.export(glb_path)
 
-    # 9. turntable verification renders (best-effort, software rasterizer)
+    # 11. turntable verification renders (best-effort, software rasterizer)
     thumbs = []
     if not args.no_turntable:
         try:
@@ -367,23 +809,31 @@ def main(argv=None):
                 rv = vcols
             rv_use = rv if (rv is not None and len(rv) == len(render_mesh.vertices)) else None
             thumbs = software_turntable(render_mesh.vertices, render_mesh.faces,
-                                        rv_use, out_dir, f"{args.name}-turntable")
+                                        rv_use, out_dir, f"{args.name}-turntable",
+                                        up=orient_up)
         except Exception as e:
             eprint(f"[mesh] turntable render skipped ({e})")
 
     # report
+    genus = int(round((2 - tm.euler_number) / 2)) if watertight else None
     eprint("[mesh] --------------------------------------------------")
     eprint(f"[mesh] watertight : {watertight}")
+    if genus is not None:
+        eprint(f"[mesh] genus      : {genus} (0 = no through-holes/tunnels)")
+        if genus > 0:
+            eprint(f"[mesh] WARNING: surface still has ~{genus} through-tunnel(s) "
+                   "that show as holes; raise --close (e.g. 4) or lower --voxel, "
+                   "or capture the missing angles.")
+    eprint(f"[mesh] base       : {base_note}")
     eprint(f"[mesh] vertices   : {len(tm.vertices)}   faces: {len(tm.faces)}")
-    unit = "mm" if (args.size_mm and args.size_mm > 0) else "scene units"
     eprint(f"[mesh] dimensions : {ext_mm[0]:.2f} x {ext_mm[1]:.2f} x {ext_mm[2]:.2f} {unit}")
     if watertight:
         vol = abs(tm.volume)
         vunit = "mm^3" if unit == "mm" else "units^3"
         eprint(f"[mesh] volume     : {vol:.2f} {vunit}")
     else:
-        eprint("[mesh] WARNING: mesh is NOT watertight - hole-filling could not close "
-               "it. Try a lower --density-quantile, higher --depth, or a fuller capture.")
+        eprint("[mesh] WARNING: mesh is NOT watertight (exported due to --allow-open). "
+               "It may fail to slice; fill holes in your slicer or recapture.")
     eprint(f"[mesh] STL : {stl_path}")
     eprint(f"[mesh] GLB : {glb_path}")
     for t in thumbs:
