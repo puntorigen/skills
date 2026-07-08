@@ -16,9 +16,6 @@ venv/
 config.json
 *.key
 
-# private skills
-generate-sow/
-
 # Sensitive web-session artifacts (lessons live in ~/.web-lessons/)
 *.har
 
