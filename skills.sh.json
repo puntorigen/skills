@@ -3,11 +3,13 @@
   "groupings": [
     {
       "title": "Local media pipeline",
-      "description": "Generate images, voiceovers, music, and talking-head video entirely on-device — no cloud APIs.",
+      "description": "Generate images, voiceovers, music, sound effects, radio drama, and talking-head video entirely on-device — no cloud APIs.",
       "skills": [
         "image-gen",
         "voice-clone-narration",
         "bg-music",
+        "sound-effects",
+        "audio-theater",
         "talking-head"
       ]
     },
@@ -26,6 +28,13 @@
       "skills": [
         "edit-docx",
         "pdf-documents"
+      ]
+    },
+    {
+      "title": "Agent cognition",
+      "description": "Give the agent a persistent, inspectable mental workspace — a local J-space concept graph it can load, query by association, prime, and checkpoint.",
+      "skills": [
+        "j-space"
       ]
     }
   ]

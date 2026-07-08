@@ -110,6 +110,28 @@ else
   fi
 fi
 
+# --- pin a compatible transformers (mlx backend) ------------------------------
+# mlx-audio pulls the newest transformers, but the Qwen3-TTS VoiceDesign path
+# imports mlx-lm 0.31.3, which calls the pre-5.10 AutoTokenizer.register()
+# signature; transformers >=5.10 raises "'str' object has no attribute
+# '__module__'" and voice DESIGN fails (Chatterbox cloning is unaffected). Pin
+# to a compatible range. Self-healing + idempotent: only acts when out of range.
+if [[ "$BACKEND" == "mlx" ]]; then
+  if ! "$PY_BIN" - <<'PY' 2>/dev/null
+import sys
+try:
+    import transformers as t
+    v = tuple(int(x) for x in t.__version__.split(".")[:2])
+    sys.exit(0 if (5, 5) <= v < (5, 10) else 1)
+except Exception:
+    sys.exit(1)
+PY
+  then
+    echo "[setup] pinning transformers to >=5.5,<5.10 (mlx-lm VoiceDesign compatibility)" >&2
+    pipi 'transformers>=5.5,<5.10'
+  fi
+fi
+
 echo "[setup] done." >&2
 echo "[setup]   data root : $VC_HOME" >&2
 echo "[setup]   python    : $PY_BIN" >&2

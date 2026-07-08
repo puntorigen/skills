@@ -1,0 +1,63 @@
+{
+  "cues": [
+    {
+      "id": "storm_bed",
+      "type": "ambient",
+      "description": "steady heavy rain and gusting wind battering a lighthouse window, distant rolling thunder, no music",
+      "start": 0.0,
+      "end": 54.64,
+      "gain_db": -19,
+      "duck_db": -8,
+      "fade_in": 2.0,
+      "fade_out": 3.0,
+      "seed": 11,
+      "file": "sfx/storm_bed.mp3",
+      "gen_duration": 10.96
+    },
+    {
+      "id": "door",
+      "type": "oneshot",
+      "description": "a heavy wooden door slamming and straining against its frame in a violent wind gust",
+      "start": 19.4,
+      "gen_seconds": 3,
+      "gain_db": -3,
+      "spatial": {
+        "pan": -0.55,
+        "distance": 0.15
+      },
+      "seed": 21,
+      "file": "sfx/door.mp3",
+      "gen_duration": 2.972
+    },
+    {
+      "id": "thunder",
+      "type": "oneshot",
+      "description": "an enormous cracking thunderclap directly overhead with a long deep rumbling tail",
+      "start": 28.4,
+      "gen_seconds": 4,
+      "gain_db": -2,
+      "spatial": {
+        "pan": 0.12,
+        "distance": 0.4
+      },
+      "seed": 7,
+      "file": "sfx/thunder.mp3",
+      "gen_duration": 3.994
+    },
+    {
+      "id": "foghorn",
+      "type": "oneshot",
+      "description": "a distant deep foghorn sounding twice, far across open water",
+      "start": 51.0,
+      "gen_seconds": 4,
+      "gain_db": -7,
+      "spatial": {
+        "pan": 0.3,
+        "distance": 0.85
+      },
+      "seed": 33,
+      "file": "sfx/foghorn.mp3",
+      "gen_duration": 3.994
+    }
+  ]
+}

@@ -1,0 +1,189 @@
+{
+  "title": "The Keeper of Karsk",
+  "language": "en",
+  "mode": "theater",
+  "tts_mode": "per_line",
+  "engine": "voice-clone-narration",
+  "voice_model": "multilingual",
+  "dialogue": "dialogue.wav",
+  "duration": 50.64,
+  "max_clip_seconds": 15,
+  "lines": [
+    {
+      "index": 0,
+      "speaker": "Narrator",
+      "voice": "at-the-keeper-of-karsk-narrator",
+      "text": "The lighthouse at Karsk had not gone dark in ninety years.",
+      "tags": [
+        "calm"
+      ],
+      "exaggeration": 0.4,
+      "cfg_weight": 0.5,
+      "file": "lines/line-000.wav",
+      "start": 0.0,
+      "end": 4.68,
+      "duration": 4.68,
+      "pause_after": 0.35
+    },
+    {
+      "index": 1,
+      "speaker": "Narrator",
+      "voice": "at-the-keeper-of-karsk-narrator",
+      "text": "Tonight, the storm meant to change that.",
+      "tags": [
+        "serious"
+      ],
+      "exaggeration": 0.45,
+      "cfg_weight": 0.5,
+      "file": "lines/line-001.wav",
+      "start": 5.03,
+      "end": 8.39,
+      "duration": 3.36,
+      "pause_after": 0.5
+    },
+    {
+      "index": 2,
+      "speaker": "Mara",
+      "voice": "at-the-keeper-of-karsk-mara",
+      "text": "Bolt the door, Tomas. That wind will tear it off its hinges.",
+      "tags": [
+        "serious"
+      ],
+      "exaggeration": 0.45,
+      "cfg_weight": 0.5,
+      "file": "lines/line-002.wav",
+      "start": 8.89,
+      "end": 13.25,
+      "duration": 4.36,
+      "pause_after": 0.3
+    },
+    {
+      "index": 3,
+      "speaker": "Tomas",
+      "voice": "at-the-keeper-of-karsk-tomas",
+      "text": "I'm trying! The latch won't hold!",
+      "tags": [
+        "panicked"
+      ],
+      "exaggeration": 0.85,
+      "cfg_weight": 0.3,
+      "file": "lines/line-003.wav",
+      "start": 13.55,
+      "end": 16.23,
+      "duration": 2.68,
+      "pause_after": 0.35
+    },
+    {
+      "index": 4,
+      "speaker": "Mara",
+      "voice": "at-the-keeper-of-karsk-mara",
+      "text": "Then lean into it, boy. With me. On three.",
+      "tags": [
+        "intense"
+      ],
+      "exaggeration": 0.8,
+      "cfg_weight": 0.35,
+      "file": "lines/line-004.wav",
+      "start": 16.58,
+      "end": 22.58,
+      "duration": 6.0,
+      "pause_after": 0.3
+    },
+    {
+      "index": 5,
+      "speaker": "Tomas",
+      "voice": "at-the-keeper-of-karsk-tomas",
+      "text": "One... two...",
+      "tags": [
+        "nervous"
+      ],
+      "exaggeration": 0.6,
+      "cfg_weight": 0.4,
+      "file": "lines/line-005.wav",
+      "start": 22.88,
+      "end": 24.44,
+      "duration": 1.56,
+      "pause_after": 0.6
+    },
+    {
+      "index": 6,
+      "speaker": "Mara",
+      "voice": "at-the-keeper-of-karsk-mara",
+      "text": "The lamp's gone out. We light it by hand, or ships go down tonight.",
+      "tags": [
+        "serious"
+      ],
+      "exaggeration": 0.45,
+      "cfg_weight": 0.5,
+      "file": "lines/line-006.wav",
+      "start": 25.04,
+      "end": 30.2,
+      "duration": 5.16,
+      "pause_after": 0.4
+    },
+    {
+      "index": 7,
+      "speaker": "Narrator",
+      "voice": "at-the-keeper-of-karsk-narrator",
+      "text": "High above them, the great glass lens waited in the dark.",
+      "tags": [
+        "calm"
+      ],
+      "exaggeration": 0.4,
+      "cfg_weight": 0.5,
+      "file": "lines/line-007.wav",
+      "start": 30.6,
+      "end": 35.56,
+      "duration": 4.96,
+      "pause_after": 0.4
+    },
+    {
+      "index": 8,
+      "speaker": "Tomas",
+      "voice": "at-the-keeper-of-karsk-tomas",
+      "text": "I can't even see the wick.",
+      "tags": [
+        "worried"
+      ],
+      "exaggeration": 0.55,
+      "cfg_weight": 0.45,
+      "file": "lines/line-008.wav",
+      "start": 35.96,
+      "end": 37.52,
+      "duration": 1.56,
+      "pause_after": 0.3
+    },
+    {
+      "index": 9,
+      "speaker": "Mara",
+      "voice": "at-the-keeper-of-karsk-mara",
+      "text": "You don't need to see it. You need to trust it. Strike the match.",
+      "tags": [
+        "calm"
+      ],
+      "exaggeration": 0.4,
+      "cfg_weight": 0.5,
+      "file": "lines/line-009.wav",
+      "start": 37.82,
+      "end": 43.5,
+      "duration": 5.68,
+      "pause_after": 0.5
+    },
+    {
+      "index": 10,
+      "speaker": "Narrator",
+      "voice": "at-the-keeper-of-karsk-narrator",
+      "text": "And in that small, stubborn flame, the whole coast found its way home.",
+      "tags": [
+        "calm"
+      ],
+      "exaggeration": 0.4,
+      "cfg_weight": 0.5,
+      "file": "lines/line-010.wav",
+      "start": 44.0,
+      "end": 50.04,
+      "duration": 6.04,
+      "pause_after": 0.6
+    }
+  ]
+}

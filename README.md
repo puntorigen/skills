@@ -59,6 +59,40 @@ npx skills add puntorigen/skills@bg-music -g -y
 
 ---
 
+### sound-effects
+
+Generate sound effects, foley, and ambience (door slams, footsteps, rain, wind,
+UI blips, whooshes) from a text prompt with Stable Audio Open Small (via
+mlx-audiogen). Tuned for SFX and field recordings, up to ~11s stereo.
+
+```bash
+npx skills add puntorigen/skills@sound-effects -g -y
+```
+
+**Requires:** Apple Silicon Mac, uv, ffmpeg, ~1-2 GB disk. Weights are public
+(no HF account/token needed); under the Stability AI Community License (free
+under $1M revenue).
+
+---
+
+### audio-theater
+
+Turn a dialogue, story, or idea into finished multi-character audio — a radio
+drama, a two-host podcast, or clean lip-sync clips — by orchestrating
+`voice-clone-narration` (one voice per character), `sound-effects` (foley), and
+`bg-music` (score), then mixing with ffmpeg (ducking + optional stereo
+spatialization). Delivers the full mix plus music/no-music stems and a timecoded
+transcript.
+
+```bash
+npx skills add puntorigen/skills@audio-theater -g -y
+```
+
+**Requires:** ffmpeg + the `voice-clone-narration` skill (required); optional
+`sound-effects` and `bg-music` for SFX/music cues. No venv of its own.
+
+---
+
 ### talking-head
 
 Turn a portrait image + narration audio into a lip-synced talking-head MP4 with
@@ -142,6 +176,26 @@ npx skills add puntorigen/skills@pdf-documents -g -y
 
 **Requires:** Python 3.9+ (any OS), ~1-2 GB disk for Docling models (first read).
 
+---
+
+### j-space
+
+Build and use an external, persistent **mental workspace** for an agent, modeled
+on the "J-space" from [Anthropic's global-workspace research](https://www.anthropic.com/research/global-workspace).
+Turn a topic (Perplexity/web research) or a codebase (`scan`) into a weighted
+concept graph, compile it into a matrix with local embeddings, then `load`,
+`query` (spreading activation), `edit`, `checkpoint`, and even `hypnotize` the
+workspace — pin concepts, install triggers, and write an always-on induction rule
+that primes the agent every session.
+
+```bash
+npx skills add puntorigen/skills@j-space -g -y
+```
+
+**Requires:** Python 3.11+, uv, ~500 MB disk for the venv + `all-MiniLM-L6-v2`
+embedding model (public, no HF account; MPS or CPU, any platform). See
+[j-space/README.md](j-space/README.md).
+
 ## End-to-end reel workflow
 
 These skills compose into a fully local content pipeline:
@@ -151,19 +205,75 @@ image-gen  →  avatar.png
 voice-clone-narration  →  narration.mp3
 talking-head  →  talking-head.mp4
 bg-music  →  reel-audio.mp3 (optional mix)
+
+# or a full audio drama / podcast:
+audio-theater  →  orchestrates voice-clone-narration + sound-effects + bg-music
+               →  final.mp3 (+ music / no-music stems) + transcript.md
+               →  clean per-line clips → talking-head (on-camera lip-sync)
 ```
 
 Install the set:
 
 ```bash
 npx skills add puntorigen/skills \
-  -s image-gen,voice-clone-narration,bg-music,talking-head \
+  -s image-gen,voice-clone-narration,bg-music,sound-effects,audio-theater,talking-head \
   -g -y
 ```
 
 Each skill stores models and outputs **outside the repo** (under `~/.*` home
 dirs). First run of `scripts/setup_env.sh` downloads weights and may take
 several minutes.
+
+## Example: a 3-voice spatial radio drama
+
+[`examples/audio-theater-storm/`](examples/audio-theater-storm/) is a complete,
+reproducible `audio-theater` run — a 55-second storm scene with **three distinct
+designed voices** (no reference clips) and **four spatialized sound effects**,
+mixed to a stereo stage. 100% local, no cloud, no Hugging Face account.
+
+![Stereo waveform of the rendered mix — left channel (blue) over right (orange); the two differ because voices and SFX are panned across the stage](assets/audio-theater-storm-waveform.png)
+
+_Left channel (blue) over right (orange). They differ because each voice and
+one-shot sits at its own pan/distance — e.g. the big left-heavy burst is the
+door slam on Mara's side of the stage._
+
+The story and cues are authored as small JSON files; the agent then drives the
+sibling skills:
+
+```bash
+OUT=examples/audio-theater-storm
+SC=audio-theater/scripts
+
+python3 $SC/setup_cast.py       --out $OUT                      # design 1 voice / character
+python3 $SC/generate_voices.py  --script $OUT/script.json --out $OUT   # -> dialogue.wav + lines.json
+python3 $SC/generate_sfx.py     --cues   $OUT/cues.json   --out $OUT   # ambient bed + one-shots
+python3 $SC/mix_spatial.py      --out $OUT                      # -> final.mp3 (stereo stage)
+python3 $SC/build_transcript.py --out $OUT                      # -> transcript.md
+```
+
+Positions live in `script.json` (`characters[].stage`) and `cues.json`
+(`cues[].spatial`) as `pan` (−1 left … +1 right) and `distance` (0 near … 1 far):
+
+```jsonc
+// script.json — the cast, seated on the stage
+"characters": [
+  { "name": "Narrator", "role": "narration", "stage": { "pan": 0.0,  "distance": 0.12 } },
+  { "name": "Mara",     "persona": "weathered lighthouse keeper, low and steady",
+    "stage": { "pan": -0.4, "distance": 0.2 } },
+  { "name": "Tomas",    "persona": "nervous young apprentice, higher and breathy",
+    "stage": { "pan": 0.45, "distance": 0.22 } }
+]
+
+// cues.json — a hard-left door slam on Mara's side
+{ "id": "door", "type": "oneshot",
+  "description": "a heavy wooden door slamming against its frame in a wind gust",
+  "start": 19.4, "gen_seconds": 3, "spatial": { "pan": -0.55, "distance": 0.15 } }
+```
+
+The rendered [`transcript.md`](examples/audio-theater-storm/transcript.md) and the
+input JSON are committed; the audio (`*.mp3`/`*.wav`) is git-ignored — run the
+commands above to hear it. See the
+[example README](examples/audio-theater-storm/README.md) for the full walkthrough.
 
 ## Repo layout
 
@@ -177,12 +287,17 @@ skills/
 │   └── scripts/
 ├── voice-clone-narration/
 ├── bg-music/
+├── sound-effects/
+├── audio-theater/
 ├── talking-head/
 ├── video-to-splat/
 ├── object-to-3d/
 ├── teach-web-actions/
 ├── edit-docx/
-└── pdf-documents/
+├── pdf-documents/
+├── j-space/
+└── examples/
+    └── audio-theater-storm/   # worked audio-theater example (script + cues + transcript)
 ```
 
 ## Verify locally before publishing
@@ -213,3 +328,9 @@ Skill instructions and scripts in this repo are MIT unless noted otherwise.
 Bundled model weights retain their upstream licenses (ACE-Step MIT, Chatterbox
 MIT, Qwen3-TTS Apache-2.0, Z-Image/FLUX Apache-2.0, etc.) — see each skill's
 `REFERENCE.md`.
+
+> **Note on `sound-effects`:** Stable Audio Open Small weights are under the
+> [Stability AI Community License](https://stability.ai/license) — free for
+> research and for individuals/organizations under **$1M USD annual revenue**, but
+> not as permissive as the Apache/MIT models above. The `audio-theater` skill
+> inherits this when it generates SFX. Review before commercial use.

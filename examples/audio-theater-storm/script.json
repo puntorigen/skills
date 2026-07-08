@@ -1,0 +1,148 @@
+{
+  "title": "The Keeper of Karsk",
+  "language": "en",
+  "mode": "theater",
+  "characters": [
+    {
+      "name": "Narrator",
+      "role": "narration",
+      "on_camera": false,
+      "persona": "A warm, low male storyteller in his fifties, calm and cinematic, an unhurried documentary narrator.",
+      "stage": {
+        "pan": 0.0,
+        "distance": 0.12
+      },
+      "voice": "at-the-keeper-of-karsk-narrator"
+    },
+    {
+      "name": "Mara",
+      "persona": "A weathered woman in her sixties, a lifelong lighthouse keeper. Low, gravelly, steady voice; firm and commanding, never rattled.",
+      "tone": "serious",
+      "stage": {
+        "pan": -0.4,
+        "distance": 0.2
+      },
+      "voice": "at-the-keeper-of-karsk-mara"
+    },
+    {
+      "name": "Tomas",
+      "persona": "A young man in his late teens, a nervous apprentice. Higher-pitched, slightly breathy, anxious and eager to please.",
+      "stage": {
+        "pan": 0.45,
+        "distance": 0.22
+      },
+      "voice": "at-the-keeper-of-karsk-tomas"
+    }
+  ],
+  "lines": [
+    {
+      "index": 0,
+      "speaker": "Narrator",
+      "text": "The lighthouse at Karsk had not gone dark in ninety years.",
+      "tags": [
+        "calm"
+      ],
+      "pause_after": 0.35
+    },
+    {
+      "index": 1,
+      "speaker": "Narrator",
+      "text": "Tonight, the storm meant to change that.",
+      "tags": [
+        "serious"
+      ],
+      "pause_after": 0.5
+    },
+    {
+      "index": 2,
+      "speaker": "Mara",
+      "text": "Bolt the door, Tomas. That wind will tear it off its hinges.",
+      "tags": [
+        "serious"
+      ],
+      "pause_after": 0.3
+    },
+    {
+      "index": 3,
+      "speaker": "Tomas",
+      "text": "I'm trying! The latch won't hold!",
+      "tags": [
+        "panicked"
+      ],
+      "pause_after": 0.35
+    },
+    {
+      "index": 4,
+      "speaker": "Mara",
+      "text": "Then lean into it, boy. With me. On three.",
+      "tags": [
+        "intense"
+      ],
+      "pause_after": 0.3
+    },
+    {
+      "index": 5,
+      "speaker": "Tomas",
+      "text": "One... two...",
+      "tags": [
+        "nervous"
+      ],
+      "pause_after": 0.6
+    },
+    {
+      "index": 6,
+      "speaker": "Mara",
+      "text": "The lamp's gone out. We light it by hand, or ships go down tonight.",
+      "tags": [
+        "serious"
+      ],
+      "pause_after": 0.4
+    },
+    {
+      "index": 7,
+      "speaker": "Narrator",
+      "text": "High above them, the great glass lens waited in the dark.",
+      "tags": [
+        "calm"
+      ],
+      "pause_after": 0.4
+    },
+    {
+      "index": 8,
+      "speaker": "Tomas",
+      "text": "I can't even see the wick.",
+      "tags": [
+        "worried"
+      ],
+      "pause_after": 0.3,
+      "spatial": {
+        "from": {
+          "pan": 0.5,
+          "distance": 0.35
+        },
+        "to": {
+          "pan": 0.28,
+          "distance": 0.18
+        }
+      }
+    },
+    {
+      "index": 9,
+      "speaker": "Mara",
+      "text": "You don't need to see it. You need to trust it. Strike the match.",
+      "tags": [
+        "calm"
+      ],
+      "pause_after": 0.5
+    },
+    {
+      "index": 10,
+      "speaker": "Narrator",
+      "text": "And in that small, stubborn flame, the whole coast found its way home.",
+      "tags": [
+        "calm"
+      ],
+      "pause_after": 0.6
+    }
+  ]
+}
