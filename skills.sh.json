@@ -22,9 +22,10 @@
     },
     {
       "title": "Documents",
-      "description": "Inspect and edit office documents locally while preserving formatting.",
+      "description": "Read, edit, and create office documents locally — Word and PDF — while preserving formatting.",
       "skills": [
-        "edit-docx"
+        "edit-docx",
+        "pdf-documents"
       ]
     }
   ]

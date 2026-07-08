@@ -127,6 +127,21 @@ npx skills add puntorigen/skills@edit-docx -g -y
 
 **Requires:** Python 3.9+ (any OS). Optional `uv` for a faster install.
 
+---
+
+### pdf-documents
+
+Read PDFs with real layout understanding (Docling → structured JSON/Markdown,
+tables, sections, OCR) and create professional multi-page PDFs from a JSON
+config (fpdf2 → titles, styled tables, images, lists, headers/footers) — all
+locally.
+
+```bash
+npx skills add puntorigen/skills@pdf-documents -g -y
+```
+
+**Requires:** Python 3.9+ (any OS), ~1-2 GB disk for Docling models (first read).
+
 ## End-to-end reel workflow
 
 These skills compose into a fully local content pipeline:
@@ -166,7 +181,8 @@ skills/
 ├── video-to-splat/
 ├── object-to-3d/
 ├── teach-web-actions/
-└── edit-docx/
+├── edit-docx/
+└── pdf-documents/
 ```
 
 ## Verify locally before publishing
