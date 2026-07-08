@@ -16,6 +16,9 @@ venv/
 config.json
 *.key
 
+# private skills
+generate-sow/
+
 # Sensitive web-session artifacts (lessons live in ~/.web-lessons/)
 *.har
 
@@ -31,6 +34,10 @@ config.json
 *.ply
 *.sog
 *.spz
+
+# Repo header assets are committed on purpose (README banner + logo)
+!assets/
+!assets/*.png
 
 # OS & editor
 .DS_Store
