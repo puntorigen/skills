@@ -39,20 +39,82 @@ then a few common roots (`~/.cursor/skills`, `~/.agents/skills`, `./.cursor/skil
 | `export_lipsync.py` | python3 | `lipsync.json` manifest for the talking-head skill. |
 | `split_tracks.py` | python3 | Split into `narration.mp3` + `lipsync_mix.mp3` (narration muted). |
 
-## Voice delivery: tags -> knobs
+## Voice delivery & emotion
 
-Chatterbox (voice-clone-narration) has no inline audio tags; instead delivery is
-controlled by two numbers, which `generate_voices.py` maps from line `tags`:
+This is an audio **drama**: the characters should act, not just read. Chatterbox
+(the multilingual default) has no inline emotion markup, so delivery is driven by
+two continuous knobs, which `generate_voices.py` resolves per line from a rich
+emotion vocabulary:
 
-- **exaggeration** (0-1): emotional intensity.
-- **cfg_weight** (0-1): cadence adherence; lower = slower/calmer and, importantly,
-  **less accent transfer** (for non-English lines cfg is capped at 0.4).
+- **exaggeration** (0-1): emotional intensity. `0.5` neutral, `0.7-0.9` dramatic.
+  Capped at `1.0` (higher gets artifact-prone and also speeds delivery up).
+- **cfg_weight** (0-1): cadence adherence; lower = slower/more deliberate/more
+  emotive, and **less accent transfer** (non-English lines cap cfg at 0.4).
 
-Presets include: `neutral/calm/serious/tired/sad`, `whispers/soft`,
-`nervous/worried/trembling`, `happy/excited/energetic/promo/cheerful`,
-`dramatic/angry/panicked/shout/intense`. Set per-line `exaggeration`/`cfg_weight`
-numbers to override, or a character-level `tone`/`exaggeration`/`cfg_weight`
-default. First recognized tag wins.
+### Stating emotion in the script
+
+Every line can carry a first-class **`emotion`** (preferred) or a list of `tags`,
+plus an optional **`intensity`**:
+
+```json
+{"speaker": "Tomas", "text": "The latch won't hold!", "emotion": "panicked", "intensity": 0.85}
+```
+
+- **`emotion`** — one word from the vocabulary below (wins over `tags`). Free-form
+  stage directions resolve too: `whispering`→`whisper`, `angrily`→`angry`,
+  `sternly`→`stern`, `scared`→`frightened` (see `EMOTION_ALIASES` + the `-ing/-ly`
+  reduction in `generate_voices.py`).
+- **`intensity`** (0-1, `0.5` = leave the preset as-is) — dials the same emotion
+  hotter or cooler: higher pushes `exaggeration` up and `cfg_weight` down. Also
+  settable per character.
+- **explicit `exaggeration`/`cfg_weight`** numbers on a line win outright — the
+  escape hatch for a stubborn take (the example pins line 4 this way).
+- character-level **`tone`** (+ optional `exaggeration`/`cfg_weight`) sets a default
+  for lines with no emotion of their own.
+
+### Emotion vocabulary (grouped by register)
+
+| Register | Emotions (exaggeration rises left→right) |
+|----------|------------------------------------------|
+| Intimate | `hushed` `whisper` `soft` `calm` `gentle` `tender` `warm` `wistful` `reassuring` `cold` |
+| Gravity | `tired/weary` `sad` `sorrowful` `solemn` `serious` `grave` `grim` `hopeful` |
+| Authority | `firm` `proud` `resolute/determined` `sarcastic` `menacing` `stern` `commanding` `defiant` |
+| Fear/distress | `worried` `anxious` `nervous` `trembling` `pleading` `breathless` `frightened/afraid/scared` `desperate` `panicked` `terrified` |
+| Heat | `urgent` `intense` `dramatic` `angry` `furious` `shout/shouting/yelling` |
+| Bright | `happy/cheerful` `playful` `joyful` `surprised` `awe` `excited/energetic` `triumphant` `laughs` `promo` |
+
+### Expressiveness (dynamic range)
+
+`--expressiveness` (or script/config `expressiveness`) stretches every line's
+distance from neutral (0.5), giving the whole piece dynamic range — calm lines
+sit calmer, peaks hit harder. Default **1.2 for theater**, 1.0 otherwise. Precedence:
+CLI > script field > config > mode default. It never touches explicit numeric
+overrides.
+
+### Non-verbal cues (`[gasp]`, `[sigh]`, ...)
+
+You can write breaths and reactions inline in the text. On the **`turbo`** model
+(English-only; `--model turbo`) Chatterbox voices them natively — supported tokens:
+`[laugh] [sigh] [chuckle] [cough] [gasp] [groan] [sniff] [shush] [clear throat]`.
+On the multilingual default the bracket is **stripped** (never read aloud) and its
+presence instead nudges `intensity` up, so the script still reads like a play. Use
+turbo for punchy English drama where audible gasps/sighs matter; keep multilingual
+for non-English or when you need the designed multilingual voices.
+
+## SFX cue quality (one-shots)
+
+Stable Audio Open Small responds best to **short, concrete** prompts. A vague or
+overloaded prompt drifts into the wrong texture (a "door … straining in a violent
+wind gust" can come out as an animal roar). For a crisp impact:
+
+- Prompt the *sound*, not the scene: `heavy wooden door slams shut, sharp wooden bang`.
+- Per-cue quality knobs in `cues.json` are passed through to the sound-effects CLI:
+  `steps` (bump to ~20-24), `sampler` (`"rk4"` for a cleaner one-shot), `cfg_scale`
+  (higher = follows the prompt more strictly), and `negative_prompt` (steer away
+  from the wrong texture, e.g. `"music, animal, roar, voice, drone"`).
+- `seed` fixes the take. Generate a few (`sound-effects/generate_sfx.py --count N
+  --seed S`) and keep the best — an impact should have a sharp attack and fast
+  decay, not a sustained tail.
 
 ## Casting voices
 

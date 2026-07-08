@@ -227,9 +227,10 @@ several minutes.
 ## Example: a 3-voice spatial radio drama
 
 [`examples/audio-theater-storm/`](examples/audio-theater-storm/) is a complete,
-reproducible `audio-theater` run — a 55-second storm scene with **three distinct
-designed voices** (no reference clips) and **four spatialized sound effects**,
-mixed to a stereo stage. 100% local, no cloud, no Hugging Face account.
+reproducible `audio-theater` run — a ~50-second storm scene with **three distinct
+designed voices** (no reference clips), **acted with per-line emotion**, and **four
+spatialized sound effects**, mixed to a stereo stage. 100% local, no cloud, no
+Hugging Face account.
 
 ![Stereo waveform of the rendered mix — left channel (blue) over right (orange); the two differ because voices and SFX are panned across the stage](assets/audio-theater-storm-waveform.png)
 
@@ -244,30 +245,35 @@ sibling skills:
 OUT=examples/audio-theater-storm
 SC=audio-theater/scripts
 
-python3 $SC/setup_cast.py       --out $OUT                      # design 1 voice / character
-python3 $SC/generate_voices.py  --script $OUT/script.json --out $OUT   # -> dialogue.wav + lines.json
+python3 $SC/setup_cast.py       --out $OUT                             # design 1 voice / character
+python3 $SC/generate_voices.py  --script $OUT/script.json --out $OUT --seed 700  # -> dialogue.wav + lines.json
 python3 $SC/generate_sfx.py     --cues   $OUT/cues.json   --out $OUT   # ambient bed + one-shots
-python3 $SC/mix_spatial.py      --out $OUT                      # -> final.mp3 (stereo stage)
-python3 $SC/build_transcript.py --out $OUT                      # -> transcript.md
+python3 $SC/mix_spatial.py      --out $OUT                             # -> final.mp3 (stereo stage)
+python3 $SC/build_transcript.py --out $OUT                             # -> transcript.md
 ```
 
-Positions live in `script.json` (`characters[].stage`) and `cues.json`
-(`cues[].spatial`) as `pan` (−1 left … +1 right) and `distance` (0 near … 1 far):
+Each line is **acted**: an `emotion` (+ `intensity`) drives Chatterbox's
+exaggeration/cadence, and a theater `expressiveness` boost widens the dynamic range
+so calm lines sit calm and the panic actually spikes:
 
 ```jsonc
-// script.json — the cast, seated on the stage
+// script.json — cast seated on the stage, each line given a delivery
+"expressiveness": 1.25,
 "characters": [
-  { "name": "Narrator", "role": "narration", "stage": { "pan": 0.0,  "distance": 0.12 } },
-  { "name": "Mara",     "persona": "weathered lighthouse keeper, low and steady",
+  { "name": "Narrator", "role": "narration", "tone": "warm", "stage": { "pan": 0.0,  "distance": 0.12 } },
+  { "name": "Mara",     "persona": "weathered lighthouse keeper, low and steady", "tone": "firm",
     "stage": { "pan": -0.4, "distance": 0.2 } },
-  { "name": "Tomas",    "persona": "nervous young apprentice, higher and breathy",
+  { "name": "Tomas",    "persona": "nervous young apprentice, higher and breathy", "tone": "nervous",
     "stage": { "pan": 0.45, "distance": 0.22 } }
+],
+"lines": [
+  { "index": 3, "speaker": "Tomas", "text": "I'm trying! The latch won't hold!", "emotion": "panicked", "intensity": 0.8 }
 ]
 
-// cues.json — a hard-left door slam on Mara's side
-{ "id": "door", "type": "oneshot",
-  "description": "a heavy wooden door slamming against its frame in a wind gust",
-  "start": 19.4, "gen_seconds": 3, "spatial": { "pan": -0.55, "distance": 0.15 } }
+// cues.json — a hard-left door slam on Mara's side (short, concrete prompt + quality knobs)
+{ "id": "door", "type": "oneshot", "description": "heavy wooden door slams shut, sharp wooden bang",
+  "start": 17.9, "gen_seconds": 3, "steps": 24, "sampler": "rk4",
+  "negative_prompt": "music, animal, roar, voice", "spatial": { "pan": -0.55, "distance": 0.15 } }
 ```
 
 The rendered [`transcript.md`](examples/audio-theater-storm/transcript.md) and the

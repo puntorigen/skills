@@ -19,6 +19,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -33,51 +34,199 @@ from _common import (  # noqa: E402
 
 TTS_RATE = 24000  # fixed rate/mono for clean concat (clips are re-encoded)
 
-# Delivery tag -> (exaggeration, cfg_weight). Chatterbox uses these instead of
-# inline audio tags. exaggeration: emotional intensity; cfg_weight: cadence
-# adherence (lower = slower / calmer / less accent transfer).
+# ── Emotion / performance model ────────────────────────────────────────────
+# Chatterbox has no inline emotion markup on the multilingual model, so a line's
+# emotion is delivered through two continuous knobs:
+#   exaggeration : emotional intensity (0.5 neutral; 0.7-0.9 dramatic; higher
+#                  also speeds delivery up)
+#   cfg_weight   : cadence adherence (lower = slower, more deliberate, more
+#                  emotive pacing; also reduces accent bleed on non-English)
+# The table below is a drama-tuned vocabulary an actor/director can reach for.
+# Values are (exaggeration, cfg_weight). Neutral is (0.5, 0.5).
 TONE_PRESETS = {
-    "neutral": (0.5, 0.5), "calm": (0.4, 0.5), "serious": (0.45, 0.5),
-    "tired": (0.35, 0.5), "sad": (0.4, 0.45), "gentle": (0.4, 0.55),
-    "whispers": (0.35, 0.6), "whisper": (0.35, 0.6), "soft": (0.4, 0.55),
-    "trembling": (0.6, 0.4), "nervous": (0.6, 0.4), "worried": (0.55, 0.45),
-    "happy": (0.65, 0.4), "excited": (0.7, 0.35), "energetic": (0.7, 0.35),
-    "promo": (0.7, 0.35), "cheerful": (0.65, 0.4), "laughs": (0.7, 0.4),
-    "dramatic": (0.8, 0.3), "angry": (0.8, 0.3), "panicked": (0.85, 0.3),
-    "shout": (0.9, 0.3), "shouting": (0.9, 0.3), "intense": (0.8, 0.35),
+    # — restrained / intimate —
+    "neutral": (0.5, 0.5), "narration": (0.5, 0.5),
+    "calm": (0.4, 0.5), "warm": (0.46, 0.5), "gentle": (0.42, 0.55),
+    "tender": (0.46, 0.5), "soft": (0.4, 0.55), "hushed": (0.38, 0.6),
+    "whisper": (0.35, 0.6), "whispers": (0.35, 0.6),
+    "reassuring": (0.5, 0.45), "wistful": (0.46, 0.5), "cold": (0.45, 0.45),
+    # — weight / gravity —
+    "serious": (0.5, 0.45), "solemn": (0.48, 0.45), "grave": (0.52, 0.4),
+    "grim": (0.56, 0.4), "sad": (0.45, 0.45), "sorrowful": (0.5, 0.42),
+    "tired": (0.38, 0.5), "weary": (0.38, 0.5), "hopeful": (0.55, 0.45),
+    # — resolve / authority —
+    "firm": (0.6, 0.42), "resolute": (0.62, 0.4), "determined": (0.62, 0.4),
+    "stern": (0.66, 0.4), "commanding": (0.7, 0.38), "defiant": (0.75, 0.32),
+    "proud": (0.6, 0.42), "menacing": (0.62, 0.35), "sarcastic": (0.6, 0.42),
+    # — fear / distress —
+    "worried": (0.58, 0.45), "anxious": (0.6, 0.42), "nervous": (0.62, 0.4),
+    "trembling": (0.66, 0.38), "breathless": (0.72, 0.35), "pleading": (0.72, 0.35),
+    "frightened": (0.8, 0.32), "afraid": (0.8, 0.32), "scared": (0.8, 0.32),
+    "desperate": (0.84, 0.3), "panicked": (0.88, 0.3), "terrified": (0.9, 0.3),
+    # — heat / force —
+    "urgent": (0.74, 0.35), "intense": (0.8, 0.35), "dramatic": (0.82, 0.3),
+    "angry": (0.84, 0.3), "furious": (0.9, 0.28), "shout": (0.92, 0.28),
+    "shouting": (0.92, 0.28), "yelling": (0.92, 0.28),
+    # — light / bright —
+    "happy": (0.66, 0.4), "cheerful": (0.66, 0.4), "joyful": (0.7, 0.38),
+    "playful": (0.68, 0.42), "excited": (0.75, 0.35), "energetic": (0.74, 0.35),
+    "surprised": (0.74, 0.38), "awe": (0.6, 0.42), "awestruck": (0.62, 0.42),
+    "triumphant": (0.8, 0.35), "laughs": (0.72, 0.4), "laughing": (0.72, 0.4),
+    "promo": (0.72, 0.35),
 }
 DEFAULT_KNOBS = (0.5, 0.5)
+NEUTRAL_EXAG = 0.5
+
+# Forgiving synonyms so an author can write natural stage directions ("angrily",
+# "whispering", "scared") and still hit a preset. Unlisted -ing/-ly forms are also
+# reduced heuristically (see resolve_emotion_key).
+EMOTION_ALIASES = {
+    "angrily": "angry", "nervously": "nervous", "desperately": "desperate",
+    "urgently": "urgent", "coldly": "cold", "softly": "soft", "firmly": "firm",
+    "gently": "gentle", "calmly": "calm", "sadly": "sad", "warmly": "warm",
+    "sternly": "stern", "fearfully": "frightened", "fearful": "frightened",
+    "scared": "frightened", "afraid": "frightened", "terror": "terrified",
+    "excitedly": "excited", "cheerfully": "cheerful", "proudly": "proud",
+    "wearily": "weary", "tenderly": "tender", "grimly": "grim", "solemnly": "solemn",
+    "gravely": "grave", "hopefully": "hopeful", "playfully": "playful",
+    "joyfully": "joyful", "defiantly": "defiant", "menacingly": "menacing",
+    "sarcastically": "sarcastic", "breathlessly": "breathless",
+    "commandingly": "commanding", "triumphantly": "triumphant",
+    "reassuringly": "reassuring", "wistfully": "wistful", "anxiously": "anxious",
+    "worriedly": "worried", "fury": "furious", "rage": "furious", "raging": "furious",
+    "whispered": "whisper", "shouted": "shout", "screaming": "shout",
+    "scream": "shout", "crying": "sorrowful", "sobbing": "sorrowful", "sob": "sorrowful",
+}
+
+# Non-verbal paralinguistic cues. Chatterbox **turbo** (English-only) speaks these
+# natively when they appear inline in the text; the multilingual model cannot, so
+# on multilingual they are stripped from the spoken text and instead nudge the
+# emotional intensity up (an author can still "write the gasp" in the script).
+TURBO_NONVERBAL = {
+    "laugh": "[laugh]", "laughs": "[laugh]", "laughter": "[laugh]",
+    "sigh": "[sigh]", "sighs": "[sigh]",
+    "chuckle": "[chuckle]", "chuckles": "[chuckle]",
+    "cough": "[cough]", "coughs": "[cough]",
+    "gasp": "[gasp]", "gasps": "[gasp]",
+    "groan": "[groan]", "groans": "[groan]",
+    "sniff": "[sniff]", "sniffs": "[sniff]",
+    "shush": "[shush]",
+    "clear throat": "[clear throat]", "clears throat": "[clear throat]",
+}
+_BRACKET_RE = re.compile(r"\[([^\]]+)\]")
 
 
-def resolve_knobs(line, char_default, lang):
-    """Resolve (exaggeration, cfg_weight) for a line from explicit fields or tags."""
-    exag, cfg = char_default
-    if "exaggeration" in line:
-        exag = float(line["exaggeration"])
-    if "cfg_weight" in line:
-        cfg = float(line["cfg_weight"])
-    else:
-        for t in line.get("tags", []) or []:
-            key = str(t).strip().strip("[]").lower()
-            if key in TONE_PRESETS:
-                _, cfg = TONE_PRESETS[key]
-                if "exaggeration" not in line:
-                    exag = TONE_PRESETS[key][0]
-                break
-    # Non-English with an English-leaning reference: pull cfg down to reduce
-    # accent transfer (voice-clone-narration guidance: cfg 0 avoids accent).
-    if lang and lang != "en":
-        cfg = min(cfg, 0.4)
-    return round(float(exag), 3), round(float(cfg), 3)
+def _norm_key(s):
+    return str(s or "").strip().strip("[]").lower()
+
+
+def resolve_emotion_key(word):
+    """Map a free-form emotion/tag word to a TONE_PRESETS key, or None.
+
+    Tries the word verbatim, an alias table, then a light -ing/-ly reduction
+    (e.g. "whispering" -> "whisper", "sternly" -> "stern")."""
+    k = _norm_key(word)
+    if not k:
+        return None
+    if k in TONE_PRESETS:
+        return k
+    if k in EMOTION_ALIASES:
+        return EMOTION_ALIASES[k]
+    for suf in ("ing", "ly"):
+        if k.endswith(suf) and len(k) > len(suf) + 2:
+            base = k[:-len(suf)]
+            for cand in (base, base + "e"):
+                if cand in TONE_PRESETS:
+                    return cand
+                if cand in EMOTION_ALIASES:
+                    return EMOTION_ALIASES[cand]
+    return None
+
+
+def _clamp(v, lo, hi):
+    return max(lo, min(hi, v))
+
+
+def process_inline_tags(text, model_is_turbo):
+    """Handle inline bracketed cues in a line's text.
+
+    Returns (clean_text, nonverbal_hits). On turbo, recognized non-verbal cues are
+    normalized to the model's native tokens and kept inline; on multilingual (and
+    for any unrecognized bracket), the bracket is removed so it is never read
+    aloud. Detected non-verbal cues are returned so the caller can compensate the
+    emotional intensity when the model can't voice them.
+    """
+    hits = []
+
+    def repl(m):
+        canon = TURBO_NONVERBAL.get(_norm_key(m.group(1)))
+        if canon:
+            hits.append(canon)
+            return canon if model_is_turbo else ""
+        return ""  # drop unknown brackets from spoken text on every backend
+
+    clean = _BRACKET_RE.sub(repl, text)
+    clean = re.sub(r"\s{2,}", " ", clean).replace(" ,", ",").replace(" .", ".").strip()
+    return clean, hits
 
 
 def char_default_knobs(character):
     exag = character.get("exaggeration")
     cfg = character.get("cfg_weight")
-    tone = str(character.get("tone", "")).strip().lower()
-    base = TONE_PRESETS.get(tone, DEFAULT_KNOBS)
+    tone_key = resolve_emotion_key(character.get("tone", ""))
+    base = TONE_PRESETS.get(tone_key, DEFAULT_KNOBS)
     return (float(exag) if exag is not None else base[0],
             float(cfg) if cfg is not None else base[1])
+
+
+def performance_knobs(line, character, lang, expressiveness, nonverbal_hits=()):
+    """Resolve (exaggeration, cfg_weight) for a line's delivery.
+
+    Precedence, low to high: character default -> emotion/tags preset ->
+    theater expressiveness (amplifies deviation from neutral) -> intensity dial
+    -> explicit per-line numeric overrides. Non-English pulls cfg down to limit
+    accent bleed. Returns (exag, cfg, emotion_label).
+    """
+    exag, cfg = char_default_knobs(character)
+
+    # 1. emotion field wins over tags; both look up the same vocabulary.
+    label = resolve_emotion_key(line.get("emotion"))
+    if label is None:
+        for t in line.get("tags") or []:
+            label = resolve_emotion_key(t)
+            if label:
+                break
+    if label is not None:
+        exag, cfg = TONE_PRESETS[label]
+
+    # 2. theater expressiveness: stretch emotional range around neutral.
+    if expressiveness and expressiveness != 1.0:
+        exag = NEUTRAL_EXAG + (exag - NEUTRAL_EXAG) * float(expressiveness)
+
+    # 3. intensity dial (0..1; 0.5 = leave as-is). Line overrides character.
+    inten = line.get("intensity", character.get("intensity"))
+    # A non-verbal cue we can't voice (multilingual) bumps intensity to compensate.
+    if nonverbal_hits and inten is None:
+        inten = 0.66
+    if inten is not None:
+        i = _clamp(float(inten), 0.0, 1.0)
+        exag = exag + (i - 0.5) * 0.5
+        cfg = cfg - (i - 0.5) * 0.2
+
+    # 4. explicit numeric overrides win outright.
+    if "exaggeration" in line:
+        exag = float(line["exaggeration"])
+    if "cfg_weight" in line:
+        cfg = float(line["cfg_weight"])
+
+    # 5. non-English: limit accent transfer (voice-clone-narration guidance).
+    if lang and lang != "en":
+        cfg = min(cfg, 0.4)
+
+    # Cap exaggeration at 1.0 - Chatterbox gets unstable / artifact-prone above it.
+    exag = _clamp(exag, 0.2, 1.0)
+    cfg = _clamp(cfg, 0.05, 0.7)
+    return round(exag, 3), round(cfg, 3), label
 
 
 def pad_clip(clip_path, pause_after, out_path):
@@ -158,15 +307,30 @@ def main():
                              "bad take (e.g. a repeated phrase) without disturbing good ones.")
     parser.add_argument("--seed", type=int, default=None,
                         help="Base RNG seed for reproducible synthesis (line i uses seed+i).")
+    parser.add_argument("--expressiveness", type=float, default=None,
+                        help="Amplify each line's emotional range around neutral (1.0 = presets "
+                             "as-is; >1 = more dynamic/dramatic). Default: 1.2 for theater, else 1.0.")
     args = parser.parse_args()
 
     config = load_config()
     model = args.model or config.get("default_voice_model", "multilingual")
+    model_is_turbo = str(model).strip().lower() == "turbo"
     max_clip = args.max_clip_seconds or config.get("max_clip_seconds", MAX_CLIP_SECONDS)
 
     script = load_json(args.script)
     out_dir = resolve_out_dir(args.out)
     lang = (script.get("language") or "en").strip().lower()
+    mode = str(script.get("mode") or "theater").strip().lower()
+
+    # Expressiveness precedence: CLI > script field > config > mode default.
+    if args.expressiveness is not None:
+        expressiveness = args.expressiveness
+    elif script.get("expressiveness") is not None:
+        expressiveness = float(script["expressiveness"])
+    elif config.get("expressiveness") is not None:
+        expressiveness = float(config["expressiveness"])
+    else:
+        expressiveness = 1.2 if mode == "theater" else 1.0
 
     characters = {c["name"]: c for c in script.get("characters", [])}
     missing_voice = [name for name, c in characters.items() if not c.get("voice")]
@@ -192,17 +356,22 @@ def main():
     synth_items, synth_indices = [], set()
     for ln in script.get("lines", []):
         idx = ln.get("index")
-        text = (ln.get("text") or "").strip()
-        if not text:
+        raw_text = (ln.get("text") or "").strip()
+        if not raw_text:
             continue
         speaker = ln.get("speaker")
         ch = characters.get(speaker, {})
         voice = ch.get("voice")
-        exag, cfg = resolve_knobs(ln, char_default_knobs(ch), lang)
+        # Inline [non-verbal] cues: kept for turbo, stripped (but noted) elsewhere.
+        text, nonverbal = process_inline_tags(raw_text, model_is_turbo)
+        if not text:
+            text = raw_text  # a line that was only a bracket cue: fall back to raw
+        exag, cfg, emotion = performance_knobs(ln, ch, lang, expressiveness, nonverbal)
         out_wav = lines_dir / f"line-{idx:03d}.wav"
         ordered.append(idx)
         meta[idx] = {"speaker": speaker, "voice": voice, "text": text,
-                     "tags": ln.get("tags", []), "exaggeration": exag, "cfg_weight": cfg,
+                     "emotion": emotion, "tags": ln.get("tags", []),
+                     "exaggeration": exag, "cfg_weight": cfg,
                      "pause_after": float(ln.get("pause_after", 0.3) or 0.0),
                      "out_wav": out_wav}
         # With --only, skip synthesis for lines that already have a clip on disk.
@@ -257,7 +426,8 @@ def main():
         padded_paths.append(padded_path)
         entries.append({
             "index": idx, "speaker": m["speaker"], "voice": m["voice"], "text": m["text"],
-            "tags": m["tags"], "exaggeration": m["exaggeration"], "cfg_weight": m["cfg_weight"],
+            "emotion": m["emotion"], "tags": m["tags"],
+            "exaggeration": m["exaggeration"], "cfg_weight": m["cfg_weight"],
             "file": str(clip_path.relative_to(out_dir)),
             "start": round(cumulative, 3), "end": round(cumulative + clip_dur, 3),
             "duration": round(clip_dur, 3), "pause_after": pause_after,
@@ -286,6 +456,7 @@ def main():
         "tts_mode": "per_line",
         "engine": "voice-clone-narration",
         "voice_model": model,
+        "expressiveness": round(float(expressiveness), 3),
         "dialogue": str(dialogue_path.relative_to(out_dir)),
         "duration": round(total_dur, 3),
         "max_clip_seconds": max_clip,
@@ -294,13 +465,16 @@ def main():
     lines_json = out_dir / "lines.json"
     save_json(lines_json, lines_data)
 
-    print(f"\n  dialogue.wav: {total_dur:.2f}s ({len(entries)} lines)", file=sys.stderr)
+    print(f"\n  dialogue.wav: {total_dur:.2f}s ({len(entries)} lines) · "
+          f"model={model} · expressiveness={expressiveness:g}", file=sys.stderr)
     if warnings:
         print(f"  {len(warnings)} clip(s) exceed {max_clip}s: {warnings}", file=sys.stderr)
     print(json.dumps({
         "dialogue": str(dialogue_path),
         "lines_json": str(lines_json),
         "engine": "voice-clone-narration",
+        "voice_model": model,
+        "expressiveness": round(float(expressiveness), 3),
         "line_count": len(entries),
         "duration": round(total_dur, 3),
         "clips_over_limit": warnings,

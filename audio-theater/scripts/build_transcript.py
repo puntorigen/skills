@@ -52,8 +52,9 @@ def build_lines_section(lines_data, cues):
                 out.append("")
                 ci += 1
         tc = f"`[{format_timecode(ln_start)}]` " if ln_start is not None else ""
-        tag = f"_[{', '.join(ln['tags'])}]_ " if ln.get("tags") else ""
-        out.append(f"**{ln['speaker']}:** {tc}{tag}{ln['text']}")
+        cue = ln.get("emotion") or (", ".join(ln["tags"]) if ln.get("tags") else "")
+        cue = f"_({cue})_ " if cue else ""
+        out.append(f"**{ln['speaker']}:** {tc}{cue}{ln['text']}")
         out.append("")
 
     # Any remaining cues after the last line.

@@ -41,7 +41,13 @@ def cue_needed_seconds(cue):
 
 
 def gen_sound_effect(cue, out_file, sfx_py, sfx_script):
-    """Generate an ambient/oneshot cue via the sound-effects skill."""
+    """Generate an ambient/oneshot cue via the sound-effects skill.
+
+    Optional per-cue quality knobs are passed straight through to the
+    sound-effects CLI: `steps`, `sampler` ("euler"|"rk4"), `cfg_scale`, and
+    `negative_prompt`. For a crisp one-shot impact (a door, a crack), bump steps
+    to ~20-24 with `sampler: "rk4"` and add a `negative_prompt` to steer the model
+    away from the wrong texture (e.g. "music, animal, voice, roar")."""
     is_ambient = cue.get("type") == "ambient"
     needed = cue_needed_seconds(cue)
     if is_ambient:
@@ -55,6 +61,14 @@ def gen_sound_effect(cue, out_file, sfx_py, sfx_script):
            "--duration", str(gen_dur), "--output", str(out_file)]
     if cue.get("seed") is not None:
         cmd += ["--seed", str(int(cue["seed"]))]
+    if cue.get("steps") is not None:
+        cmd += ["--steps", str(int(cue["steps"]))]
+    if cue.get("sampler"):
+        cmd += ["--sampler", str(cue["sampler"])]
+    if cue.get("cfg_scale") is not None:
+        cmd += ["--cfg-scale", str(float(cue["cfg_scale"]))]
+    if cue.get("negative_prompt"):
+        cmd += ["--negative-prompt", str(cue["negative_prompt"])]
     return _run(cmd, "sfx")
 
 

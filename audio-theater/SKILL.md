@@ -141,9 +141,12 @@ python3 $SCRIPTS/generate_voices.py --script $OUT/script.json --out $OUT
 ```
 
 One clean clip per line, synthesized in a single pass (the TTS model loads once),
-concatenated into `dialogue.wav` with exact timing in `lines.json`. Line `tags`
-(e.g. `whispers`, `excited`, `angry`) map to expressiveness presets. It warns if
-a clip exceeds `--max-clip-seconds` (keep lines short for lip-sync).
+concatenated into `dialogue.wav` with exact timing in `lines.json`. Each line's
+`emotion` (e.g. `commanding`, `panicked`, `tender`) drives the delivery, and in
+`theater` mode an **expressiveness** boost widens the emotional range so the cast
+acts rather than reads (see the schema notes and REFERENCE.md → *Voice delivery &
+emotion*). Re-roll a single off take without disturbing the rest via
+`--only <index> --seed <n>`. It warns if a clip exceeds `--max-clip-seconds`.
 
 ### 4. (theater/podcast) Author the SFX/music sheet (`cues.json`)
 
@@ -211,14 +214,15 @@ speakers, use `split_tracks.py` (see REFERENCE.md).
   "title": "La tormenta",
   "language": "es",
   "mode": "theater",
+  "expressiveness": 1.2,
   "characters": [
-    {"name": "Marco", "persona": "marinero veterano, voz grave y cansada, 50s", "stage": {"pan": -0.35, "distance": 0.18}},
-    {"name": "Inés", "persona": "joven grumete, voz ligera y nerviosa", "stage": {"pan": 0.4}},
+    {"name": "Marco", "persona": "marinero veterano, voz grave y cansada, 50s", "tone": "grave", "stage": {"pan": -0.35, "distance": 0.18}},
+    {"name": "Inés", "persona": "joven grumete, voz ligera y nerviosa", "tone": "nervous", "stage": {"pan": 0.4}},
     {"name": "Narrador", "role": "narration", "on_camera": false, "persona": "voz cálida que cuenta la historia"}
   ],
   "lines": [
-    {"index": 0, "speaker": "Marco", "text": "La tormenta se acerca, muchacha.", "tags": ["serious", "tired"], "pause_after": 0.4},
-    {"index": 1, "speaker": "Inés", "text": "¿Llegaremos a puerto?", "tags": ["panicked"], "pause_after": 0.2,
+    {"index": 0, "speaker": "Marco", "text": "La tormenta se acerca, muchacha.", "emotion": "grave", "intensity": 0.6, "pause_after": 0.4},
+    {"index": 1, "speaker": "Inés", "text": "¿Llegaremos a puerto?", "emotion": "panicked", "intensity": 0.85, "pause_after": 0.2,
      "spatial": {"from": {"pan": 0.6, "distance": 0.6}, "to": {"pan": 0.2, "distance": 0.15}}}
   ]
 }
@@ -227,12 +231,21 @@ speakers, use `split_tracks.py` (see REFERENCE.md).
 - `language`: 2-letter content language (`es`, `en`, ...); passed to the voice
   model. For non-English, delivery `cfg_weight` is nudged down to reduce accent
   transfer.
+- `expressiveness` (optional): widens each line's emotional range around neutral
+  so the cast acts, not reads (default **1.2** in theater, 1.0 otherwise). Override
+  per run with `--expressiveness`.
 - `persona`: **drives voice design** - describe age, gender, pitch, pace, tone,
   accent. Used by `setup_cast.py`. (`voice` is filled in by `setup_cast.py`; you
-  normally leave it out.)
-- `tags`: optional delivery cues (`whispers`, `excited`, `tired`, `angry`,
-  `dramatic`, ...) mapped to Chatterbox exaggeration/cfg-weight presets. You can
-  also set per-line `exaggeration`/`cfg_weight` numbers directly.
+  normally leave it out.) Optional character `tone` sets a default emotion.
+- `emotion`: **the line's delivery direction** - one word (e.g. `commanding`,
+  `frightened`, `tender`, `hopeful`) from a rich vocabulary (REFERENCE.md lists it;
+  natural stage directions like `whispering`/`angrily` resolve too). `tags` (a
+  list) still works; `emotion` wins. Both map to Chatterbox exaggeration/cfg-weight.
+- `intensity` (0-1, default 0.5): dials the chosen emotion hotter/cooler. Set
+  per-line `exaggeration`/`cfg_weight` numbers directly to override outright.
+- Inline non-verbal cues in `text` - `[gasp]`, `[sigh]`, `[laugh]`, ... - are voiced
+  natively on the `turbo` model (English-only) and stripped (but intensity-boosted)
+  on the multilingual default. See REFERENCE.md → *Voice delivery & emotion*.
 - `pause_after`: seconds of silence appended after the line (default 0.3).
 - `role` / `on_camera`: mark off-camera narration (`"role": "narration"` or
   `"on_camera": false`); used by `split_tracks.py` and the spatial mixer.
@@ -255,9 +268,15 @@ speakers, use `split_tracks.py` (see REFERENCE.md).
 
 - `type`: `ambient` (looping bed, ducked under voice), `oneshot` (single hit at
   `start`), `music` (instrumental score/bed/jingle).
-- `description`: natural-language prompt. For **repeated/continuous** SFX describe
-  the whole sequence ("several footsteps on gravel"), not one hit. Add "no music"
-  for pure foley.
+- `description`: natural-language prompt. Keep it **short and concrete** - prompt
+  the *sound*, not the scene (`heavy wooden door slams shut, sharp wooden bang`), or
+  Stable Audio Open Small drifts into the wrong texture. For **repeated/continuous**
+  SFX describe the whole sequence ("several footsteps on gravel"), not one hit.
+- one-shot quality knobs (optional, passed to sound-effects): `steps` (~20-24),
+  `sampler` (`"rk4"` for a cleaner impact), `cfg_scale` (higher = stricter to the
+  prompt), `negative_prompt` (steer away from the wrong texture, e.g.
+  `"music, animal, roar, voice"`), `seed` (fix the take). See REFERENCE.md → *SFX
+  cue quality*.
 - `gain_db`: level offset - **dialogue is always on top**. One-shots ~`-12..-6`,
   SFX beds `-18..-15`, **music score lowest `-24..-20`**. `duck_db`: how much the
   cue dips while content plays (`-4..-8`; music's duck is shallow + smooth).

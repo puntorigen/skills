@@ -31,6 +31,20 @@ from _common import load_config, save_json, slugify, resolve_out_dir  # noqa: E4
 
 VALID_MODES = ("theater", "lipsync", "podcast")
 
+# A leading screenplay-style stage direction like "(whispering)" or "[angrily]"
+# becomes the line's `emotion`; the spoken text keeps only the words. Inline
+# non-verbal cues elsewhere in the text (e.g. "[gasp]") are left in place - the
+# voice generator handles them (native on Chatterbox turbo, stripped otherwise).
+_STAGE_DIR_RE = re.compile(r"^\s*[\(\[]\s*([a-zA-Z][a-zA-Z \-]{1,24}?)\s*[\)\]]\s*")
+
+
+def split_stage_direction(content):
+    """Pull a leading (stage direction) off a line -> (emotion_or_None, text)."""
+    m = _STAGE_DIR_RE.match(content)
+    if not m:
+        return None, content.strip()
+    return m.group(1).strip().lower(), content[m.end():].strip()
+
 
 def parse_dialogue_text(text):
     """Parse 'Name: line' style dialogue into characters + lines."""
@@ -46,6 +60,7 @@ def parse_dialogue_text(text):
             speaker, content = "Narrador", line
         else:
             speaker, content = m.group(1).strip(), m.group(2).strip()
+        emotion, content = split_stage_direction(content)
         if speaker not in characters:
             characters[speaker] = {"name": speaker, "voice": None, "persona": ""}
             order.append(speaker)
@@ -53,6 +68,7 @@ def parse_dialogue_text(text):
             "index": len(lines),
             "speaker": speaker,
             "text": content,
+            "emotion": emotion or "",
             "tags": [],
             "pause_after": 0.3,
         })
@@ -66,13 +82,17 @@ def normalize_script(data, *, mode, language):
         ch.setdefault("persona", "")
     lines = []
     for i, ln in enumerate(data.get("lines") or []):
-        lines.append({
+        entry = {
             "index": i,
             "speaker": ln.get("speaker", "Narrador"),
             "text": (ln.get("text") or "").strip(),
+            "emotion": (ln.get("emotion") or "").strip(),
             "tags": ln.get("tags") or [],
             "pause_after": ln.get("pause_after", 0.3),
-        })
+        }
+        if ln.get("intensity") is not None:
+            entry["intensity"] = ln["intensity"]
+        lines.append(entry)
     known = {c["name"] for c in characters}
     for ln in lines:
         if ln["speaker"] not in known:
@@ -99,8 +119,9 @@ def write_story_md(script, path):
     lines.append("## Script")
     lines.append("")
     for ln in script["lines"]:
-        tag = f" _[{', '.join(ln['tags'])}]_" if ln.get("tags") else ""
-        lines.append(f"**{ln['speaker']}:**{tag} {ln['text']}")
+        cue = ln.get("emotion") or (", ".join(ln["tags"]) if ln.get("tags") else "")
+        cue = f" _({cue})_" if cue else ""
+        lines.append(f"**{ln['speaker']}:**{cue} {ln['text']}")
         lines.append("")
     Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
