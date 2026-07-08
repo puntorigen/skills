@@ -32,9 +32,10 @@ config.json
 *.sog
 *.spz
 
-# Repo header assets are committed on purpose (README banner + logo)
+# Repo header assets are committed on purpose (README banner + logo + demo clips)
 !assets/
 !assets/*.png
+!assets/*.mp4
 
 # OS & editor
 .DS_Store
