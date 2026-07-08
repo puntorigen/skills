@@ -36,6 +36,13 @@
       "skills": [
         "j-space"
       ]
+    },
+    {
+      "title": "Brand & design",
+      "description": "Generate a logo and a matching, brand-consistent asset set with Gemini image models (cloud, best quality) — no API key is bundled; it reuses a Gemini or OpenRouter key from your environment or another installed skill, and falls back to fully on-device rendering via the local image-gen skill when no key is available.",
+      "skills": [
+        "brand-logo-kit"
+      ]
     }
   ]
 }

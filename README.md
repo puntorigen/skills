@@ -4,9 +4,12 @@
 
 # puntorigen/skills
 
-Local-first agent skills for Cursor and other AI coding agents. Every skill in
-this repo runs **on your machine** — no cloud APIs, no API keys. Most are
-optimized for **Apple Silicon Macs** (MLX / MPS / Metal).
+Local-first agent skills for Cursor and other AI coding agents. Almost every
+skill runs **on your machine** — no cloud APIs, no API keys. Most are optimized
+for **Apple Silicon Macs** (MLX / MPS / Metal). The one skill that can reach the
+cloud, [`brand-logo-kit`](#brand-logo-kit), prefers a Gemini/OpenRouter key for
+top-quality logos but bundles none (it reuses one you already have) — and falls
+back to fully **on-device** rendering when there's no key.
 
 Install with the [skills CLI](https://skills.sh/):
 
@@ -196,6 +199,31 @@ npx skills add puntorigen/skills@j-space -g -y
 embedding model (public, no HF account; MPS or CPU, any platform). See
 [j-space/README.md](j-space/README.md).
 
+---
+
+### brand-logo-kit
+
+Generate a **logo** and a matching, **brand-consistent** asset set — wordmarks,
+monograms, app icons, favicons, social avatars, banners, seamless patterns, and
+spot illustrations — with Google Gemini image models (Nano Banana Pro). Pick a
+logo, extract its palette, then reuse it as a reference so the whole set stays
+on-brand.
+
+```bash
+npx skills add puntorigen/skills@brand-logo-kit -g -y
+```
+
+> **Cloud-first, with a local fallback.** For best quality it calls the Gemini API
+> (or OpenRouter's Gemini/Nano-Banana endpoints) — it bundles **no API key**,
+> auto-discovering a `GEMINI_API_KEY` / `OPENROUTER_API_KEY` from your environment
+> or another installed skill and caching it **outside** the repo. With **no key at
+> all** it falls back to on-device rendering via the local `image-gen` skill
+> (FLUX.2 Klein, Apple Silicon) — text-to-image only, but fully offline.
+
+**Requires:** Python 3.9+ (any OS). A Gemini or OpenRouter API key for the cloud
+path; or the local `image-gen` skill (Apple Silicon) for the no-key fallback.
+Optional `uv` for a faster install.
+
 ## End-to-end reel workflow
 
 These skills compose into a fully local content pipeline:
@@ -309,6 +337,7 @@ skills/
 ├── edit-docx/
 ├── pdf-documents/
 ├── j-space/
+├── brand-logo-kit/         # cloud (Gemini) — logo + brand-consistent assets
 └── examples/
     └── audio-theater-storm/   # worked audio-theater example (script + cues + transcript)
 ```

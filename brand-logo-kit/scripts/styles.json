@@ -1,0 +1,112 @@
+{
+  "logo": {
+    "name": "Primary Logo Mark",
+    "description": "A clean, distinctive brand logo mark (symbol only, no text)",
+    "aesthetic": "A professional, memorable brand logo mark with strong silhouette and timeless design",
+    "qualities": ["simple geometric construction", "bold distinctive shape", "balanced negative space", "instantly recognizable", "scalable to a favicon without losing clarity", "flat vector look with crisp edges"],
+    "default_framing": "Single centered mark, isolated, generous even margins",
+    "default_constraints": ["No text, letters, or words unless explicitly requested", "One cohesive symbol", "No photographic detail, no gradients unless requested", "Readable in a single flat color"],
+    "recommended_aspect_ratio": "1:1",
+    "recommended_transparent": true
+  },
+  "logo-wordmark": {
+    "name": "Logo + Wordmark (Lockup)",
+    "description": "The brand name set as a wordmark, optionally paired with the mark",
+    "aesthetic": "A polished brand lockup pairing a symbol with a cleanly set wordmark of the brand name",
+    "qualities": ["professional typographic treatment", "correct letter spacing and kerning", "balanced relationship between mark and text", "brand-appropriate typeface feel", "high legibility"],
+    "default_framing": "Horizontal lockup, mark left of the name or name centered under the mark",
+    "default_constraints": ["Spell the brand name EXACTLY as given, no extra or missing letters", "Text must be perfectly legible", "Clean, even baseline"],
+    "recommended_aspect_ratio": "3:2",
+    "recommended_transparent": true
+  },
+  "monogram": {
+    "name": "Monogram / Lettermark",
+    "description": "A one or two letter monogram mark from the brand initials",
+    "aesthetic": "An elegant monogram lettermark built from the brand initials with confident geometry",
+    "qualities": ["distinctive letterform construction", "balanced weight", "works inside a badge or bare", "premium feel", "crisp vector edges"],
+    "default_framing": "Centered monogram, isolated, even margins",
+    "default_constraints": ["Use ONLY the exact initials provided", "No additional text", "Single cohesive mark"],
+    "recommended_aspect_ratio": "1:1",
+    "recommended_transparent": true
+  },
+  "app-icon": {
+    "name": "App Icon",
+    "description": "A rounded-square app icon built from the brand mark",
+    "aesthetic": "A modern app icon presenting the brand mark on a cohesive branded background",
+    "qualities": ["centered mark with comfortable padding", "cohesive background fill or subtle brand gradient", "high contrast between mark and background", "crisp at small sizes", "iOS/Android store ready"],
+    "default_framing": "Centered mark, rounded-square canvas, consistent safe-area padding",
+    "default_constraints": ["No text or words", "Mark stays inside the safe area", "Legible at 64px"],
+    "recommended_aspect_ratio": "1:1",
+    "recommended_transparent": false
+  },
+  "favicon": {
+    "name": "Favicon",
+    "description": "An ultra-simplified brand mark that stays legible at 16px",
+    "aesthetic": "A radically simplified version of the brand mark tuned for tiny sizes",
+    "qualities": ["maximum simplicity", "one or two colors", "thick confident strokes", "no fine detail", "reads clearly at 16-32px"],
+    "default_framing": "Centered, fills most of the frame, minimal margin",
+    "default_constraints": ["No text", "No thin lines or small details", "Single glance recognizable"],
+    "recommended_aspect_ratio": "1:1",
+    "recommended_transparent": true
+  },
+  "social-avatar": {
+    "name": "Social Avatar",
+    "description": "A circular-safe profile avatar built from the brand mark",
+    "aesthetic": "A profile avatar presenting the brand mark centered for a circular crop",
+    "qualities": ["mark centered for circular masking", "on-brand background", "high contrast", "clean and uncluttered", "recognizable as a thumbnail"],
+    "default_framing": "Centered within a circular safe area, generous padding from edges",
+    "default_constraints": ["Important content stays within the central circle", "No text unless it is the monogram", "Legible as a small thumbnail"],
+    "recommended_aspect_ratio": "1:1",
+    "recommended_transparent": false
+  },
+  "brand-illustration": {
+    "name": "Brand Illustration",
+    "description": "An on-brand spot illustration matching the brand's visual style",
+    "aesthetic": "A cohesive brand illustration that matches the established brand style and palette",
+    "qualities": ["consistent line weight and shape language", "on-brand color palette", "modern flat vector feel", "friendly professional tone", "cohesive with the logo"],
+    "default_framing": "Centered, balanced composition with clear focal point",
+    "default_constraints": ["Match the brand palette", "Keep the same illustration style across a set", "No text unless requested"],
+    "recommended_aspect_ratio": "1:1",
+    "recommended_transparent": false
+  },
+  "brand-pattern": {
+    "name": "Brand Pattern",
+    "description": "A seamless, tileable background pattern derived from brand motifs",
+    "aesthetic": "A seamless tileable brand pattern built from simplified brand motifs and colors",
+    "qualities": ["seamlessly tileable", "uses the brand palette", "subtle and non-distracting", "even visual rhythm", "derived from the brand mark or motifs"],
+    "default_framing": "Edge-to-edge full coverage, no focal point",
+    "default_constraints": ["Must tile seamlessly", "Stay within the brand palette", "Low enough contrast to sit behind content"],
+    "recommended_aspect_ratio": "1:1",
+    "recommended_transparent": false
+  },
+  "brand-banner": {
+    "name": "Brand Banner",
+    "description": "A social or hero banner in the brand style with room for text",
+    "aesthetic": "A wide on-brand banner with dramatic yet clean composition and space for a headline",
+    "qualities": ["wide cinematic composition", "on-brand palette and motifs", "clear negative space for a headline", "modern polished feel", "cohesive with the logo"],
+    "default_framing": "Wide composition, focal interest on one side, negative space on the other for text",
+    "default_constraints": ["Leave clear negative space for a headline", "Match the brand palette"],
+    "recommended_aspect_ratio": "16:9",
+    "recommended_transparent": false
+  },
+  "brand-photo": {
+    "name": "Brand Photography",
+    "description": "A photographic image styled to match the brand's look and feel",
+    "aesthetic": "A professional brand photograph with commercial polish matching the brand mood",
+    "qualities": ["sharp focus", "on-brand color grading and lighting mood", "commercial photography quality", "consistent styling across a set", "authentic and modern"],
+    "default_framing": "Natural composition following rule of thirds",
+    "default_constraints": ["Match the brand mood and color grade", "Keep styling consistent across a set"],
+    "recommended_aspect_ratio": "16:9",
+    "recommended_transparent": false
+  },
+  "brand-icon": {
+    "name": "Brand UI Icon",
+    "description": "A UI icon drawn in the brand's icon style for a consistent set",
+    "aesthetic": "A clean UI icon drawn in a single consistent brand icon style",
+    "qualities": ["consistent stroke weight", "consistent corner radius", "grid-aligned", "matches the brand palette", "reads clearly at small sizes"],
+    "default_framing": "Centered, isolated, consistent padding on a square grid",
+    "default_constraints": ["Keep stroke weight identical across the set", "No text", "Single concept per icon"],
+    "recommended_aspect_ratio": "1:1",
+    "recommended_transparent": true
+  }
+}
