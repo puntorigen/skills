@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/puntorigen/skills/main/assets/banner.png" alt="puntorigen/skills" width="820" />
+</p>
+
 # puntorigen/skills
 
 Local-first agent skills for Cursor and other AI coding agents. Every skill in
@@ -109,6 +113,20 @@ npx skills add puntorigen/skills@teach-web-actions -g -y
 
 **Requires:** Node.js, Google Chrome, python3, ffmpeg (for mp4 proof).
 
+---
+
+### edit-docx
+
+Inspect and edit Microsoft Word `.docx` files while preserving formatting,
+styles, and layout — run-aware find/replace, insert paragraphs, edit table
+cells, add rows, delete elements — all locally with python-docx.
+
+```bash
+npx skills add puntorigen/skills@edit-docx -g -y
+```
+
+**Requires:** Python 3.9+ (any OS). Optional `uv` for a faster install.
+
 ## End-to-end reel workflow
 
 These skills compose into a fully local content pipeline:
@@ -147,7 +165,8 @@ skills/
 ├── talking-head/
 ├── video-to-splat/
 ├── object-to-3d/
-└── teach-web-actions/
+├── teach-web-actions/
+└── edit-docx/
 ```
 
 ## Verify locally before publishing

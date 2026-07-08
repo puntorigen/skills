@@ -19,6 +19,13 @@
         "object-to-3d",
         "teach-web-actions"
       ]
+    },
+    {
+      "title": "Documents",
+      "description": "Inspect and edit office documents locally while preserving formatting.",
+      "skills": [
+        "edit-docx"
+      ]
     }
   ]
 }
