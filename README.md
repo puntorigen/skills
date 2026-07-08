@@ -260,18 +260,17 @@ designed voices** (no reference clips), **acted with per-line emotion**, and **f
 spatialized sound effects**, mixed to a stereo stage. 100% local, no cloud, no
 Hugging Face account.
 
-**▶ Hear it** (a play button renders inline on GitHub):
+**▶ Hear it** — [download / play the 51-second demo (MP4)](https://github.com/puntorigen/skills/raw/main/assets/audio-theater-storm-demo.mp4):
 
-<video src="https://github.com/puntorigen/skills/raw/main/assets/audio-theater-storm-demo.mp4" controls width="100%"></video>
-
-If the player doesn't load (some markdown viewers), use the direct link:
-[audio-theater-storm-demo.mp4](https://github.com/puntorigen/skills/raw/main/assets/audio-theater-storm-demo.mp4).
-
-_Static preview of the same mix — left channel (blue) over right (orange). They
-differ because each voice and one-shot sits at its own pan/distance; e.g. the
-left-heavy burst is the door slam on Mara's side of the stage:_
+<!-- Inline player: GitHub only renders one for its own user-attachments CDN,
+     not for committed raw files. Paste the https://github.com/user-attachments/assets/<id>
+     URL (from uploading the mp4 via GitHub's web UI) on its own line here. -->
 
 ![Stereo waveform of the rendered mix — left channel (blue) over right (orange); the two differ because voices and SFX are panned across the stage](assets/audio-theater-storm-waveform.png)
+
+_Static preview of the mix — left channel (blue) over right (orange). They differ
+because each voice and one-shot sits at its own pan/distance; e.g. the left-heavy
+burst is the door slam on Mara's side of the stage._
 
 The story and cues are authored as small JSON files; the agent then drives the
 sibling skills:

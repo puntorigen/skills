@@ -5,12 +5,10 @@ A fully local `audio-theater` run: a ~50-second storm scene with three distinct
 **spatialized** sound effects, mixed to a stereo stage. Everything here was produced
 on an Apple Silicon Mac with no cloud APIs and no Hugging Face account.
 
-**▶ Hear it** (GitHub renders an inline player for the committed MP4):
+**▶ Hear it** — [download / play the 51-second demo (MP4)](https://github.com/puntorigen/skills/raw/main/assets/audio-theater-storm-demo.mp4).
 
-<video src="https://github.com/puntorigen/skills/raw/main/assets/audio-theater-storm-demo.mp4" controls width="100%"></video>
-
-Direct link if the player doesn't load:
-[audio-theater-storm-demo.mp4](https://github.com/puntorigen/skills/raw/main/assets/audio-theater-storm-demo.mp4).
+<!-- Inline player needs a github.com/user-attachments/assets/<id> URL (upload the
+     mp4 via GitHub's web UI); paste it on its own line here to get a play button. -->
 
 ## What's in this folder
 
