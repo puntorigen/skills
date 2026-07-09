@@ -263,6 +263,7 @@ Hugging Face account.
 
 **▶ Hear it** — [download / play the 51-second demo (MP4)](https://github.com/puntorigen/skills/raw/main/assets/audio-theater-storm-demo.mp4):
 
+https://github.com/user-attachments/assets/2a7a6fa6-e638-49a7-a8b7-1a332738a262
 <!-- Inline player: GitHub only renders one for its own user-attachments CDN,
      not for committed raw files. Paste the https://github.com/user-attachments/assets/<id>
      URL (from uploading the mp4 via GitHub's web UI) on its own line here. -->
