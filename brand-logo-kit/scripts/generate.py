@@ -30,6 +30,13 @@ import keylib
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 STYLES_FILE = SCRIPT_DIR / "styles.json"
+LOOKS_FILE = SCRIPT_DIR / "looks.json"
+
+# Default visual "look" applied when --look auto (the default). Cloud models render
+# clean, meaningful marks without steering, so they get no forced finish. Diffusion
+# models (local) tend to produce plain/abstract shapes, so we nudge them toward the
+# richer "modern" look (gradient + soft glow + flowing curves) that tests best.
+LOOK_AUTO_DEFAULT = {"local": "modern"}
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 MAX_RETRIES = 3
@@ -43,13 +50,16 @@ AR_BASE = {
 }
 RES_SCALE = {"1K": 1.0, "2K": 1.5, "4K": 2.0}
 
-# Diffusion-friendly cues that push a local text-to-image model toward clean,
-# flat, vector-style logo output (the API models don't need these).
-LOCAL_LOGO_BOOST = ("flat 2D vector logo design, crisp clean edges, high contrast, "
-                    "centered, minimal, professional, sharp geometric shapes, "
-                    "not a photograph, not a 3D render")
-LOCAL_NEGATIVE = ("photograph, 3d render, realistic photo, busy background, gradient noise, "
-                  "blurry, low quality, jpeg artifacts, watermark, signature, extra text")
+# Quality cues for the local (diffusion) path. Kept light on purpose: the old
+# "flat 2D vector" wording tended to yield plain, generic marks. We now ask for a
+# polished, professional design and let the chosen --look supply the finish, and
+# we steer text-to-image toward a single crisp symbol rather than an abstract blob.
+LOCAL_LOGO_BOOST = ("professional brand logo design, a single clear recognizable symbol, "
+                    "crisp clean rendering, centered composition, refined and intentional, "
+                    "high production value graphic design, not a photograph")
+LOCAL_NEGATIVE = ("photograph, realistic photo, busy cluttered background, blurry, low quality, "
+                  "jpeg artifacts, watermark, signature, misspelled text, gibberish text, "
+                  "extra limbs, deformed")
 
 BG_CANDIDATES = [
     ("FF00FF", "magenta (#FF00FF)"),
@@ -88,6 +98,32 @@ def list_styles():
             rec.append("transparent")
         rec_str = f" [{', '.join(rec)}]" if rec else ""
         print(f"  {key:20s} {style['name']}: {style['description']}{rec_str}")
+
+
+def load_looks():
+    if not LOOKS_FILE.exists():
+        return {}
+    return json.loads(LOOKS_FILE.read_text(encoding="utf-8"))
+
+
+def list_looks():
+    looks = load_looks()
+    print("Available visual looks (append a finish/aesthetic to any style):\n")
+    print(f"  {'auto':16s} smart default — 'modern' for the local model, none for cloud")
+    print(f"  {'none':16s} no forced finish (let the style + your prompt decide)")
+    for key, desc in looks.items():
+        print(f"  {key:16s} {desc}")
+
+
+def resolve_look(look_arg, provider):
+    """Return the look modifier text for the chosen look + provider."""
+    looks = load_looks()
+    choice = (look_arg or "auto").lower()
+    if choice == "auto":
+        choice = LOOK_AUTO_DEFAULT.get(provider, "none")
+    if choice in ("none", ""):
+        return "", "none"
+    return looks.get(choice, ""), choice
 
 
 # ──────────────────────────────────────────────────────────
@@ -130,7 +166,8 @@ def pick_bg_color(user_prompt, ref_paths=None):
     return BG_CANDIDATES[0]
 
 
-def build_natural_prompt(user_prompt, style_key, styles, transparent=False, bg_color_info=None):
+def build_natural_prompt(user_prompt, style_key, styles, transparent=False, bg_color_info=None,
+                         look_modifier=""):
     """Compose a natural-language prompt with the style preset's brand guidance."""
     style_data = styles.get(style_key, {})
     parts = [user_prompt.rstrip(". ")]
@@ -142,6 +179,9 @@ def build_natural_prompt(user_prompt, style_key, styles, transparent=False, bg_c
             parts.append(", ".join(style_data["qualities"]))
         if style_data.get("default_framing"):
             parts.append(style_data["default_framing"])
+
+    if look_modifier:
+        parts.append(look_modifier)
 
     if transparent and bg_color_info:
         hex_code, label = bg_color_info
@@ -526,12 +566,20 @@ def main():
                         help="Force provider (local = on-device image-gen, no key)")
     parser.add_argument("--model", help="Override the model for the chosen provider "
                                         "(local: flux2-klein-4b or z-image-turbo)")
+    parser.add_argument("--look", "-l", default="auto",
+                        help="Visual finish to append (auto|none|minimal|geometric|gradient|"
+                             "glow|flow|modern|line|badge|3d|mesh|duotone|corporate). "
+                             "Default 'auto' = 'modern' for local, none for cloud.")
     parser.add_argument("--raw-prompt", action="store_true", help="Use prompt verbatim, no style wrapping")
     parser.add_argument("--list-styles", action="store_true")
+    parser.add_argument("--list-looks", action="store_true")
     args = parser.parse_args()
 
     if args.list_styles:
         list_styles()
+        return
+    if args.list_looks:
+        list_looks()
         return
     if not args.prompt:
         parser.print_help()
@@ -547,6 +595,7 @@ def main():
 
     styles = load_styles()
     style_choice = args.style
+    look_modifier, look_name = resolve_look(args.look, provider)
     cfg = keylib.load_config()
     fmt = args.format or cfg.get("default_format", "png")
 
@@ -565,6 +614,7 @@ def main():
     print(f"Provider: {provider} (source: {source})", file=sys.stderr)
     print(f"Model: {model}", file=sys.stderr)
     print(f"Style: {style_choice}", file=sys.stderr)
+    print(f"Look: {look_name}", file=sys.stderr)
     print(f"Aspect ratio: {aspect_ratio or 'default'}", file=sys.stderr)
     if args.resolution:
         print(f"Resolution: {args.resolution}", file=sys.stderr)
@@ -579,7 +629,9 @@ def main():
         print(f"Background color: #{bg_color_info[0]} ({bg_color_info[1]})", file=sys.stderr)
 
     if args.raw_prompt:
-        prompt = args.prompt
+        prompt = args.prompt.rstrip(". ")
+        if look_modifier:
+            prompt = f"{prompt}. {look_modifier}"
         if transparent and bg_color_info:
             hex_code, label = bg_color_info
             prompt = prompt.rstrip(". ") + (
@@ -587,7 +639,13 @@ def main():
                 f"just a single flat #{hex_code} color filling the entire background.")
     else:
         prompt = build_natural_prompt(args.prompt, style_choice, styles,
-                                      transparent=transparent, bg_color_info=bg_color_info)
+                                      transparent=transparent, bg_color_info=bg_color_info,
+                                      look_modifier=look_modifier)
+
+    if provider == "local" and ("wordmark" in style_choice or "lockup" in style_choice):
+        print("Tip: local diffusion renders text with a generic font. For crisp, on-brand "
+              "typography compose the name with a real font via wordmark.py, then combine it "
+              "with a symbol generated here (see SKILL.md).", file=sys.stderr)
 
     print("Generating...", file=sys.stderr)
     count = min(max(args.count, 1), 4)
@@ -636,6 +694,7 @@ def main():
         "provider": provider,
         "model": model,
         "style": style_choice,
+        "look": look_name,
         "aspect_ratio": aspect_ratio,
         "resolution": args.resolution,
         "transparent": transparent,

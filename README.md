@@ -6,10 +6,10 @@
 
 Local-first agent skills for Cursor and other AI coding agents. Almost every
 skill runs **on your machine** — no cloud APIs, no API keys. Most are optimized
-for **Apple Silicon Macs** (MLX / MPS / Metal). The one skill that can reach the
-cloud, [`brand-logo-kit`](#brand-logo-kit), prefers a Gemini/OpenRouter key for
-top-quality logos but bundles none (it reuses one you already have) — and falls
-back to fully **on-device** rendering when there's no key.
+for **Apple Silicon Macs** (MLX / MPS / Metal). Even [`brand-logo-kit`](#brand-logo-kit),
+the one skill that _can_ reach the cloud, is **local-first**: it prefers on-device
+FLUX.2 Klein for logos and only falls back to a Gemini/OpenRouter key (which it
+reuses from your environment, never bundling one) when local can't run.
 
 Install with the [skills CLI](https://skills.sh/):
 
@@ -205,24 +205,25 @@ embedding model (public, no HF account; MPS or CPU, any platform). See
 
 Generate a **logo** and a matching, **brand-consistent** asset set — wordmarks,
 monograms, app icons, favicons, social avatars, banners, seamless patterns, and
-spot illustrations — with Google Gemini image models (Nano Banana Pro). Pick a
-logo, extract its palette, then reuse it as a reference so the whole set stays
-on-brand.
+spot illustrations. Pick a logo, set the name in a **real font** (`wordmark.py`),
+extract the palette, and keep the whole set cohesive with a shared `--look`.
 
 ```bash
 npx skills add puntorigen/skills@brand-logo-kit -g -y
 ```
 
-> **Cloud-first, with a local fallback.** For best quality it calls the Gemini API
-> (or OpenRouter's Gemini/Nano-Banana endpoints) — it bundles **no API key**,
-> auto-discovering a `GEMINI_API_KEY` / `OPENROUTER_API_KEY` from your environment
-> or another installed skill and caching it **outside** the repo. With **no key at
-> all** it falls back to on-device rendering via the local `image-gen` skill
-> (FLUX.2 Klein, Apple Silicon) — text-to-image only, but fully offline.
+> **Local-first, with a cloud fallback.** By default it renders **on-device** via
+> the local `image-gen` skill (FLUX.2 Klein, Apple Silicon) — no key, no cloud —
+> chosen automatically when there's an Apple Silicon Mac with enough disk for the
+> weights. When local can't run it falls back to the **cloud** (Gemini / OpenRouter
+> Nano Banana Pro), bundling **no API key**: it auto-discovers `GEMINI_API_KEY` /
+> `OPENROUTER_API_KEY` from your environment or another installed skill and caches
+> it **outside** the repo. `--look` presets steer the finish, and `wordmark.py`
+> sets brand text from genuine fonts (no misspelled diffusion text).
 
-**Requires:** Python 3.9+ (any OS). A Gemini or OpenRouter API key for the cloud
-path; or the local `image-gen` skill (Apple Silicon) for the no-key fallback.
-Optional `uv` for a faster install.
+**Requires:** Python 3.9+ (any OS). For the preferred local path: an Apple Silicon
+Mac + the `image-gen` skill. For the cloud fallback: a Gemini or OpenRouter API key
+(auto-discovered). Optional `uv` for a faster install.
 
 ## End-to-end reel workflow
 
@@ -336,7 +337,7 @@ skills/
 ├── edit-docx/
 ├── pdf-documents/
 ├── j-space/
-├── brand-logo-kit/         # cloud (Gemini) — logo + brand-consistent assets
+├── brand-logo-kit/         # local-first (FLUX.2 Klein) + cloud fallback — logos & brand assets
 └── examples/
     └── audio-theater-storm/   # worked audio-theater example (script + cues + transcript)
 ```

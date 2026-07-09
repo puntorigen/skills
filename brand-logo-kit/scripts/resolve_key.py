@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
-"""Discover, show, set, or clear the API key used by brand-logo-kit.
+"""Resolve the provider, or show/set/clear the cached API key for brand-logo-kit.
 
-No key ships with this skill. Running with no arguments auto-discovers a key
-from the environment or another installed skill and caches it (outside the repo,
-at ~/.brand-logo-kit/config.json) for later runs.
+This repo is local-first: with no arguments the resolver prefers the on-device
+image-gen skill (FLUX.2 Klein) when it can realistically run, and only falls
+back to a CLOUD key (Gemini/OpenRouter) discovered from the environment or
+another installed skill. No key ships with this skill; the cache lives outside
+the repo at ~/.brand-logo-kit/config.json.
 
 Usage:
-    python3 resolve_key.py                        # auto-discover + cache, print status
-    python3 resolve_key.py --provider google      # only accept a Google key
-    python3 resolve_key.py --provider openrouter  # only accept an OpenRouter key
+    python3 resolve_key.py                        # resolve provider (local-first), print status
+    python3 resolve_key.py --status               # detailed local-provider diagnostics
+    python3 resolve_key.py --provider local       # force on-device image-gen
+    python3 resolve_key.py --provider google      # force/require a Google key
+    python3 resolve_key.py --provider openrouter  # force/require an OpenRouter key
     python3 resolve_key.py --show                 # print cached config (key masked)
     python3 resolve_key.py --set <KEY>            # cache a key manually
     python3 resolve_key.py --clear                # forget the cached key
+
+Env:
+    BRAND_LOGO_KIT_PREFER=cloud     try a key before the local model
+    BRAND_LOGO_KIT_MIN_DISK_GB=N    free GB required to auto-pick local for a fresh download
 """
 
 import argparse
@@ -28,12 +36,18 @@ def main():
                         help="Force provider (also used to disambiguate --set; "
                              "local = on-device image-gen fallback)")
     parser.add_argument("--show", action="store_true", help="Show cached config (key masked)")
+    parser.add_argument("--status", action="store_true",
+                        help="Show detailed local-provider diagnostics (disk, weights, usability)")
     parser.add_argument("--clear", action="store_true", help="Forget the cached key")
     args = parser.parse_args()
 
     if args.clear:
         keylib.clear_key()
         print(f"Cached key cleared ({keylib.CONFIG_FILE}).")
+        return
+
+    if args.status:
+        print(json.dumps(keylib.local_status(), indent=2))
         return
 
     if args.show:
@@ -62,15 +76,25 @@ def main():
         sys.exit(1)
 
     if provider == "local":
-        print("No API key found — using the on-device LOCAL fallback (image-gen skill).")
+        st = keylib.local_status()
+        if st["weights_present"]:
+            why = "weights already downloaded"
+        elif st["usable"]:
+            why = f"{st['free_gb']} GB free (>= {st['min_free_gb']} GB needed to download)"
+        else:
+            why = (f"WARNING only {st['free_gb']} GB free, needs ~{st['min_free_gb']} GB "
+                   "to download weights — the run may fail")
+        print(f"Using the on-device LOCAL model ({st['model']}) — {why}.")
     else:
-        print("Resolved and cached an API key.")
+        st = keylib.local_status()
+        reason = "BRAND_LOGO_KIT_PREFER=cloud" if keylib._prefer_cloud() else \
+                 ("local not installed" if not st["installed"] else
+                  f"local not usable ({st['free_gb']} GB free < {st['min_free_gb']} GB)")
+        print(f"Resolved and cached a CLOUD API key (local skipped: {reason}).")
     print(f"  provider: {provider}")
     print(f"  source:   {source}")
     print(f"  key:      {keylib.mask(key)}")
     print(f"  cache:    {keylib.CONFIG_FILE}")
-    if provider != "local":
-        print(f"  local fallback available: {keylib.local_available()}")
 
 
 if __name__ == "__main__":

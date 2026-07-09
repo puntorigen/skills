@@ -39,7 +39,7 @@
     },
     {
       "title": "Brand & design",
-      "description": "Generate a logo and a matching, brand-consistent asset set with Gemini image models (cloud, best quality) — no API key is bundled; it reuses a Gemini or OpenRouter key from your environment or another installed skill, and falls back to fully on-device rendering via the local image-gen skill when no key is available.",
+      "description": "Generate a logo and a matching, brand-consistent asset set — local-first: it prefers on-device rendering via the image-gen skill (FLUX.2 Klein on Apple Silicon) and only falls back to a cloud Gemini/OpenRouter key (auto-discovered from your environment or another installed skill, never bundled) when local can't run. Brand text is set from real fonts via wordmark.py, and --look presets steer the visual finish.",
       "skills": [
         "brand-logo-kit"
       ]

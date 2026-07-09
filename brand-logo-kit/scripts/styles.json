@@ -2,10 +2,10 @@
   "logo": {
     "name": "Primary Logo Mark",
     "description": "A clean, distinctive brand logo mark (symbol only, no text)",
-    "aesthetic": "A professional, memorable brand logo mark with strong silhouette and timeless design",
-    "qualities": ["simple geometric construction", "bold distinctive shape", "balanced negative space", "instantly recognizable", "scalable to a favicon without losing clarity", "flat vector look with crisp edges"],
+    "aesthetic": "A professional, memorable brand logo mark built around one clear meaningful symbol with a strong silhouette and timeless design",
+    "qualities": ["a clear recognizable symbol that represents the concept", "bold distinctive silhouette", "balanced negative space", "instantly recognizable and memorable", "scalable down to a favicon without losing clarity", "confident and intentional, not a generic abstract swirl"],
     "default_framing": "Single centered mark, isolated, generous even margins",
-    "default_constraints": ["No text, letters, or words unless explicitly requested", "One cohesive symbol", "No photographic detail, no gradients unless requested", "Readable in a single flat color"],
+    "default_constraints": ["No text, letters, or words unless explicitly requested", "One cohesive symbol, not a busy scene", "Avoid vague abstract swooshes unless explicitly requested", "Stays recognizable at small sizes"],
     "recommended_aspect_ratio": "1:1",
     "recommended_transparent": true
   },
