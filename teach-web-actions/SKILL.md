@@ -83,6 +83,8 @@ To instead package the recording as a reusable skill, do steps 1–3, then:
 
 ```
 - [ ] 4b. Confirm skill name + install target (personal / project / skills.sh)
+- [ ] 4c. If the action needs a login, ask (per detected account) whether to add
+         a per-user setup step (--list-auth-accounts, then --with-setup)
 - [ ] 5b. Generate: run generate_skill.py; relay any secret-scan warnings
 - [ ] 6b. Refine the auto-drafted SKILL.md triggers; report the skill path
 ```
@@ -244,6 +246,43 @@ Then **you** finish it:
   `data/flow.json`.
 - Relay the secret-scan summary to the user, and point them at `SECURITY.md`
   before they share the skill.
+
+### Optional — per-user login (multi-account setup)
+
+By default the generated skill embeds **the recorder's own** login. If the
+action involves signing in and you want each installer to run it as
+**themselves** (e.g. their own Linear, plus an SSO provider), offer a **setup**
+step instead. This strips the selected hosts' credentials from the shipped HAR
+and ships a `setup.sh` that captures each user's own session on first run.
+
+A single action can need more than one logged-in service, so **detect the
+accounts first, then ask**:
+
+```bash
+# lists every host in the flow that carries auth (names/hosts only, no values)
+python3 "$SKILL_DIR/scripts/generate_skill.py" "$LESSON_DIR" --list-auth-accounts
+```
+
+Ask the user (only when a login is part of the action) whether they want a
+per-user setup step, and **for which of the detected accounts** (all, some, or
+none). Then generate accordingly:
+
+```bash
+# per-user setup for ALL detected accounts:
+python3 "$SKILL_DIR/scripts/generate_skill.py" "$LESSON_DIR" \
+  --name linear-create-issue --format cursor-personal --with-setup
+# or only specific hosts (others keep the recorder's embedded login):
+python3 "$SKILL_DIR/scripts/generate_skill.py" "$LESSON_DIR" \
+  --name linear-create-issue --with-setup --setup-hosts linear.app
+```
+
+With setup enabled the shipped `data/session.har` carries **no** login for the
+chosen hosts (values replaced with placeholders); `data/auth_accounts.json`
+records what setup must fill. Each user runs `bash scripts/setup.sh` once — a
+browser opens per service, they log in, and their session is saved locally to
+`data/user-auth.<host>.har` (gitignored). Replay overlays that per host and
+refuses a setup host until its login is captured. Default (no `--with-setup`)
+keeps the embedded login, exactly as before.
 
 The generated skill replays with `python3 scripts/replay_api.py --set knob=value`
 (reads run autonomously; mutating flows need `--confirm-mutating`) or, for a UI

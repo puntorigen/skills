@@ -20,6 +20,11 @@ Usage:
                         the embedded session cookies are still valid)
   --confirm-mutating    required if the flow contains state-changing steps
                         (POST/PUT/PATCH/DELETE) — booking/purchase/etc.
+
+If this skill was generated --with-setup, the setup host(s) ship no login: run
+`bash scripts/setup.sh` once to capture your own session (data/user-auth.*.har),
+which is overlaid here per host. Replay refuses those hosts until setup is done
+(bypass with --skip-setup-check to use only the shipped session).
 """
 from __future__ import annotations
 
@@ -43,6 +48,7 @@ DROP_REQUEST_HEADERS = {
     "host", "content-length", "connection", "accept-encoding",
     "transfer-encoding", "cookie",  # cookie re-added explicitly below
 }
+SETUP_PLACEHOLDER = "<setup-required>"
 
 
 def load_json(name):
@@ -117,7 +123,7 @@ def substitute_body(obj, subs, prefix="", changed=None):
     return changed
 
 
-def build_headers(req_headers, cookie_header):
+def build_headers(req_headers, cookie_header, overrides=None):
     headers = {}
     for h in req_headers or []:
         name = (h.get("name") or "").strip()
@@ -126,7 +132,17 @@ def build_headers(req_headers, cookie_header):
         if name.lower() in DROP_REQUEST_HEADERS:
             continue
         headers[name] = h.get("value", "")
-    if cookie_header:
+    if overrides:
+        low = {k.lower() for k in overrides}
+        for k in list(headers):
+            if k.lower() in low:
+                del headers[k]
+        headers.update(overrides)
+    # never send stripped placeholders (setup host header not captured by user)
+    for k in [k for k, v in headers.items()
+              if isinstance(v, str) and SETUP_PLACEHOLDER in v]:
+        del headers[k]
+    if cookie_header and SETUP_PLACEHOLDER not in cookie_header:
         headers["Cookie"] = cookie_header
     return headers
 
@@ -147,10 +163,11 @@ def decode_response(resp):
     return raw.decode("utf-8", "replace")
 
 
-def run_step(entry, subs, timeout, ctx):
+def run_step(entry, subs, timeout, ctx, overlay=None):
     req = entry.get("request") or {}
     method = (req.get("method") or "GET").upper()
     url, _ = substitute_query(req.get("url") or "", subs)
+    host = urlsplit(url).netloc
 
     body_bytes = None
     post = req.get("postData") or {}
@@ -175,7 +192,13 @@ def run_step(entry, subs, timeout, ctx):
                 for p in post["params"]]
         body_bytes = urlencode(form).encode("utf-8")
 
-    headers = build_headers(req.get("headers"), har_auth.cookie_header_for_entry(entry))
+    if overlay is not None and overlay.has(host):
+        cookie_header = overlay.cookie_header(host)
+        header_over = overlay.header_overrides(host)
+    else:
+        cookie_header = har_auth.cookie_header_for_entry(entry)
+        header_over = None
+    headers = build_headers(req.get("headers"), cookie_header, header_over)
     request = Request(url, data=body_bytes, method=method, headers=headers)
     try:
         with urlopen(request, timeout=timeout, context=ctx) as resp:
@@ -224,6 +247,9 @@ def main():
     ap.add_argument("--max-print", type=int, default=20000)
     ap.add_argument("--insecure", action="store_true",
                     help="skip TLS certificate verification")
+    ap.add_argument("--skip-setup-check", action="store_true",
+                    help="don't require per-user setup logins (use only the "
+                         "shipped session; setup hosts will likely 401)")
     args = ap.parse_args()
 
     flow = load_json("flow.json")
@@ -244,6 +270,23 @@ def main():
                  f"({ids}). These may book/purchase/modify data. Re-run with "
                  "--confirm-mutating only after the user approves.")
 
+    # per-user setup overlay: use each installer's own login for setup hosts
+    setup_hosts = flow.get("setup_hosts") or []
+    overlay = har_auth.AuthOverlay(setup_hosts, DATA_DIR) if setup_hosts else None
+    if flow.get("requires_setup") and not args.skip_setup_check:
+        needed = set()
+        for s in steps:
+            idx = s.get("har_entry_index")
+            if idx is not None and 0 <= idx < len(entries):
+                h = urlsplit((entries[idx].get("request") or {}).get("url") or "").netloc
+                if overlay and overlay.is_setup_host(h) and not overlay.has(h):
+                    needed.add(h.lower())
+        if needed:
+            sys.exit("setup required: no captured login for "
+                     f"{', '.join(sorted(needed))}. Run `bash scripts/setup.sh` "
+                     "first (or pass --skip-setup-check to use only the shipped "
+                     "session, which will likely 401 for these hosts).")
+
     ctx = ssl.create_default_context()
     if args.insecure:
         ctx.check_hostname = False
@@ -257,7 +300,7 @@ def main():
         idx = s.get("har_entry_index")
         if idx is None or idx < 0 or idx >= len(entries):
             sys.exit(f"error: step {s.get('step')} points at missing HAR entry {idx}")
-        status, body = run_step(entries[idx], subs, args.timeout, ctx)
+        status, body = run_step(entries[idx], subs, args.timeout, ctx, overlay)
         tag = s.get("role", "step")
         print(f"[replay] step {s['step']} ({tag}) {s['method']} "
               f"{s['endpoint_id']} -> HTTP {status}", file=sys.stderr)

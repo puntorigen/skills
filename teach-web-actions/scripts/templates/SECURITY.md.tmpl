@@ -1,17 +1,10 @@
 # Security — %%TITLE%%
 
-This skill embeds a recorded browser session so it can replay "%%ACTION_LABEL%%"
-independently. That session is **live credential material**.
+%%SESSION_INTRO%%
 
-## What `data/session.har` contains
+%%SESSION_CONTENTS%%
 
-- Session **cookies** for `%%HOST%%`: %%COOKIE_NAMES%%
-- **Auth headers**: %%AUTH_HEADER_NAMES%%
-- The exact request bodies and headers recorded during the session.
-
-Anyone who can read `data/session.har` can act as the recorded user on
-`%%HOST%%` until those credentials expire or are rotated.
-
+%%SETUP_SECURITY%%
 ## Secret scan
 
 Automated scan of the embedded session (names/locations only — no values):
@@ -22,14 +15,7 @@ Automated scan of the embedded session (names/locations only — no values):
 
 ## Sharing rules
 
-- **Safe:** sharing privately with people you already trust with this account
-  (they gain the same access the recorded session had).
-- **Not safe:** committing this skill to a public repository, posting it, or
-  sending it to untrusted parties. That leaks a live session.
-- Before publishing anywhere public, **rotate/expire the credentials** (log out
-  the recorded session, revoke tokens) or re-record against a throwaway account.
-- Sessions expire. When replay starts returning 401/403, the embedded session
-  is dead — re-record with `teach-web-actions` and regenerate.
+%%SHARING_RULES%%
 
 ## Handling rules for the agent
 

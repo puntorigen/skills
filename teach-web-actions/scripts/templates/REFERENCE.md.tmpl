@@ -29,6 +29,11 @@ lesson recorded on `%%HOST%%`.
 Everything resolves via the skill directory — no reference to `~/.web-lessons`
 or the `teach-web-actions` skill.
 
+Skills generated `--with-setup` also ship `scripts/setup.sh` +
+`scripts/setup_login.js` and `data/auth_accounts.json`; each user's captured
+login lands in `data/user-auth.<host>.har` (gitignored, never committed).
+
+%%SETUP_REFERENCE%%
 ## Primary action
 
 - Endpoint: `%%PRIMARY_ENDPOINT%%`

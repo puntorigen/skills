@@ -34,6 +34,12 @@ fi
 
 command -v ffmpeg >/dev/null 2>&1 || { echo "ffmpeg not on PATH" >&2; exit 1; }
 
+# gate: if this skill needs per-user setup, ensure each login was captured
+if ! python3 "$SCRIPT_DIR/har_auth.py" "$HAR_PATH" --check-setup; then
+  echo "[replay] run 'bash \"$SCRIPT_DIR/setup.sh\"' first to capture your login(s)." >&2
+  exit 3
+fi
+
 if [[ ! -d "$SCRIPT_DIR/node_modules/playwright" ]]; then
   echo "[replay] installing playwright npm package (first run)..." >&2
   (cd "$SCRIPT_DIR" && npm install --no-audit --no-fund >&2)
@@ -50,9 +56,10 @@ RUN_DIR="$SKILL_DIR/runs/$TS"
 VIDEO_DIR="$RUN_DIR/video"
 mkdir -p "$VIDEO_DIR"
 
-# extract the embedded session cookies for injection (values never printed)
+# extract session cookies for injection (values never printed); --overlay-setup
+# swaps in each user's own captured login for any per-user setup host
 COOKIES="$RUN_DIR/cookies.json"
-python3 "$SCRIPT_DIR/har_auth.py" "$HAR_PATH" --out "$COOKIES" >&2 || true
+python3 "$SCRIPT_DIR/har_auth.py" "$HAR_PATH" --overlay-setup --out "$COOKIES" >&2 || true
 
 echo "[replay] running variant -> $RUN_DIR" >&2
 PW_CHANNEL="$PW_CHANNEL" node "$SCRIPT_DIR/run_variant.js" "$VARIANT" "$VIDEO_DIR" "$COOKIES" >&2
