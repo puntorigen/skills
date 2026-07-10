@@ -1,0 +1,74 @@
+---
+name: %%SKILL_NAME%%
+description: >-
+  %%DESCRIPTION%%
+%%INVOCATION_LINE%%---
+
+# %%TITLE%%
+
+Perform "%%ACTION_LABEL%%" on `%%HOST%%` by replaying a recorded browser
+session with your own parameters. This skill is **self-contained**: the session
+it needs (cookies, headers, request bodies) is embedded under `data/`, so it
+works without the `teach-web-actions` skill or the original recording.
+
+- Recorded from: %%SOURCE_URL%%
+- Primary call: `%%PRIMARY_ENDPOINT%%`
+- Captured: %%RECORDED_AT%%
+
+Read [SECURITY.md](SECURITY.md) before sharing this skill — `data/session.har`
+holds **live session credentials**.
+
+## Prerequisites
+
+- **python3** (API replay — stdlib only, no pip installs).
+- For UI replay only: **Node.js** + **npx**, **Google Chrome** (or set
+  `PW_CHANNEL=chromium`), and **ffmpeg** on PATH. First UI run installs
+  `playwright` into `scripts/node_modules` automatically.
+
+Resolve the skill directory once:
+
+```bash
+SKILL_DIR="<the folder this SKILL.md lives in>"   # e.g. .cursor/skills/%%SKILL_NAME%%
+```
+
+## Parameters (knobs)
+
+Values you can change for a new variation:
+
+%%KNOBS_LIST%%
+
+## API replay (data)
+
+Reissues the full recorded flow (auth + prerequisites + the primary call) with
+your substituted knobs, then prints the primary response:
+
+```bash
+python3 "$SKILL_DIR/scripts/replay_api.py" %%SET_FLAGS_EXAMPLE%%
+```
+
+- Only reads/searches run autonomously. %%MUTATING_NOTE%%
+- Add `--only-primary` to skip prerequisites when the embedded session is still
+  valid; drop it if you get an auth error so the warm-up steps run first.
+- Never print the contents of `data/session.har` — it contains live credentials.
+
+Interpret the printed JSON for the user (summarize the result).
+%%UI_BLOCK%%
+## Flow steps
+
+The recorded chain this skill replays, in order:
+
+%%FLOW_STEPS_TABLE%%
+
+## Safety
+
+- `data/session.har` contains live cookies/tokens for `%%HOST%%`. Never print,
+  commit to a public repo, or paste its contents. See [SECURITY.md](SECURITY.md).
+- State-changing steps (POST/PUT/PATCH/DELETE) require `--confirm-mutating` and
+  explicit user approval before replay.
+- This skill reuses the session that was recorded; it does not bypass auth. If
+  the embedded session expires, re-record with the `teach-web-actions` skill.
+
+## Reference
+
+- Endpoints, knobs, the full step sequence, and the replay contract:
+  [REFERENCE.md](REFERENCE.md)

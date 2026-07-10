@@ -20,6 +20,7 @@ Everything for one lesson lives under `~/.web-lessons/<host>/<lesson-name>/`
         ├── actions.js           # recorded UI steps, --target javascript (Phase 1)
         ├── lesson.json          # distilled endpoints/knobs/auth (Phase 2)
         ├── LESSON.md            # human-readable distillation (Phase 2)
+        ├── flow.json            # primary action + prerequisite chain (Phase 4)
         ├── variant.js           # your adapted flow for UI replay (Phase 3, you write)
         └── runs/<timestamp>/
             ├── video/*.webm     # raw Playwright recording
@@ -237,6 +238,140 @@ atom to the front for streaming. Multiple `.webm` segments (multi-page flows)
 are concatenated in filename order. Feed `proof.mp4` to the **review-mp4** skill
 to describe/verify the flow.
 
+## Phase 4 — Generating a standalone skill
+
+Phase 4 packages one action into a self-contained skill. The scripts share HAR
+parsing/redaction via `scripts/har_lib.py` (extracted from `process_har.py`, so
+both use identical keep-filters, endpoint grouping, and redaction).
+
+Pipeline:
+
+```mermaid
+flowchart LR
+  Lesson["lesson.json"] --> Infer["infer_flow.py"]
+  Har["session.har"] --> Infer
+  Infer --> Flow["flow.json"]
+  Har --> Scan["scan_secrets.py"]
+  Flow --> Gen["generate_skill.py"]
+  Scan --> Gen
+  Har --> Trim["trim_har.py"]
+  Trim --> Gen
+  Gen --> Out["standalone skill/"]
+```
+
+### `flow.json` schema (`infer_flow.py`)
+
+The ordered chain needed to perform the primary action, prerequisites included.
+
+```json
+{
+  "primary_endpoint_id": "GET www.example-air.com/api/search",
+  "action_label": "search",
+  "host": "www.example-air.com",
+  "source_url": "https://www.example-air.com",
+  "primary_param_candidates": [
+    { "location": "query", "name": "from", "kind": "code", "sample": "LAX" }
+  ],
+  "mutating_steps": [2],
+  "api_steps": [
+    {
+      "step": 1, "har_entry_index": 0,
+      "endpoint_id": "GET www.example-air.com/",
+      "method": "GET", "host": "www.example-air.com",
+      "path_template": "/", "role": "prerequisite", "mutating": false,
+      "started": "2026-07-01T18:00:00Z", "param_summary": {}
+    }
+  ],
+  "has_ui": true,
+  "ui_steps": ["await page.goto('https://www.example-air.com/')", "..."],
+  "auth_surface": { "cookies_seen": ["session"], "auth_headers_seen": ["authorization"] }
+}
+```
+
+- **Primary selection:** the top-ranked non-mutating, data-bearing endpoint in
+  `lesson.json` (endpoints there are already sorted). Override with
+  `--endpoint "METHOD host/path"`.
+- **Prerequisite chain:** every *kept* HAR entry from session start through the
+  primary endpoint's **last** call becomes a step (auth warm-up, CSRF,
+  autocomplete, the data call). Roles are `primary` / `prerequisite`.
+- **`har_entry_index`** points into the HAR. `trim_har.py` re-indexes these to
+  match the trimmed `data/session.har`, so the embedded pair stays consistent.
+
+### Generated skill layout
+
+```
+<skill-name>/
+├── SKILL.md            # drafted triggers + workflow
+├── REFERENCE.md        # endpoints, knobs, step sequence, replay contract
+├── SECURITY.md         # credential warning + secret scan + sharing rules
+├── data/
+│   ├── session.har     # flow-scoped, re-indexed (live cookies/headers/bodies)
+│   ├── flow.json       # re-indexed ordered steps
+│   ├── lesson.json     # redacted distillation (copy)
+│   ├── actions.js      # recorded UI steps (if any)
+│   └── meta.json
+└── scripts/
+    ├── replay_api.py       # replay the flow with --set knob=value
+    ├── har_auth.py         # extract session cookies from embedded HAR
+    ├── replay_ui.sh        # UI replay -> mp4 (skill-local profile)
+    ├── run_variant.js      # Playwright runner (injects HAR cookies)
+    ├── variant.js          # editable UI scaffold (recorded steps)
+    └── package.json        # playwright dep
+```
+
+Nothing references `~/.web-lessons` or `teach-web-actions`; the skill is
+independent. `generate_skill.py --format` chooses the default output path
+(`cursor-personal` / `cursor-project` / `skills-sh`); `--output` overrides it.
+By default the skill is auto-invocable; `--explicit-only` sets
+`disable-model-invocation: true`.
+
+### Secret scan (`scan_secrets.py`)
+
+Reports names/locations only — **never values**. Severities:
+
+| Severity | What | Effect |
+|---|---|---|
+| info | auth headers, cookie names (expected for replay) | listed in `SECURITY.md` |
+| warning | fields whose *name* looks secret; long high-entropy tokens | listed |
+| critical | Luhn-valid card numbers, plaintext password/CVV/SSN fields, private-key PEM | `generate_skill.py` **aborts** unless `--allow-critical` |
+
+Detection covers request query/headers/body and response bodies. Card numbers
+are only flagged when Luhn-valid to avoid false positives. `--allow-critical`
+is the acknowledgment gate: pass it only after warning the user.
+
+### Sequence API replay (`replay_api.py`)
+
+Self-contained (stdlib + sibling `har_auth.py`). Reads `data/flow.json` +
+`data/session.har`, reissues every `api_step` in order, and prints the primary
+step's response.
+
+- Substitute knobs with `--set NAME=VALUE` (matched against query params and
+  JSON body scalars by name / dotted path) or `--params-json '{...}'`. A knob is
+  applied to **every** step that has it, so a shared value (e.g. `from`) updates
+  both an autocomplete prerequisite and the search call.
+- Cookies/auth come from each entry's recorded headers at call time (via
+  `har_auth.cookie_header_for_entry`); values are never printed.
+- `--only-primary` runs just the primary call (skip prerequisites when the
+  embedded session is still valid).
+- Mutating steps are **refused** unless `--confirm-mutating`. `accept-encoding`
+  is stripped so responses arrive uncompressed; gzip/deflate are still decoded
+  defensively.
+
+### Cookie-injection UI replay
+
+Unlike Phase 3 (which reuses the teaching profile), a generated skill has no
+`~/.web-lessons` profile. `replay_ui.sh` runs `har_auth.py` to export the HAR's
+cookies as Playwright cookie objects, and `run_variant.js` launches a
+**skill-local** persistent profile (`<skill>/.browser-profile`), calls
+`context.addCookies(...)`, then runs `variant.js`. The variant signature adds a
+`params` argument (from the `PW_PARAMS` env var):
+
+```js
+module.exports = async (page, params = {}) => { await page.goto("..."); ... };
+```
+
+Video → mp4 conversion is identical to Phase 3.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
@@ -248,3 +383,7 @@ to describe/verify the flow.
 | UI replay records no video | The variant never opened/navigated a page, or it threw before `goto`. Check the runner's stderr. |
 | Replay times out on a selector | Selectors from `actions.js` may be brittle; prefer role/label locators and add `waitForSelector`. |
 | Chrome profile "already in use" | A codegen/replay session is still open on the same profile. Close it first. |
+| `generate_skill.py` refuses (CRITICAL secrets) | Card/password/SSN/private-key material in the HAR. Warn the user (names/locations only), then pass `--allow-critical`, or re-record without entering that data. |
+| Wrong primary action packaged | Pass `--endpoint "METHOD host/path"` (or `--label`) to `generate_skill.py` / `infer_flow.py`, or hand-edit `data/flow.json`. |
+| Generated skill replay returns 401/403 | The embedded session expired. Re-record with `teach-web-actions` and regenerate the skill. |
+| `infer_flow.py`: "primary endpoint not found in session.har" | `lesson.json` is stale. Re-run `process_har.py`, then `infer_flow.py`. |

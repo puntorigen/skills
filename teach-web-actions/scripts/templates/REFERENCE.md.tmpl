@@ -1,0 +1,90 @@
+# %%TITLE%% — Reference
+
+Background for [SKILL.md](SKILL.md): what this generated skill bundles, how
+replay works, and the recorded flow. Generated from a `teach-web-actions`
+lesson recorded on `%%HOST%%`.
+
+## Bundle layout
+
+```
+%%SKILL_NAME%%/
+├── SKILL.md            # how to run this action
+├── REFERENCE.md        # this file
+├── SECURITY.md         # credential warning + sharing rules
+├── data/
+│   ├── session.har     # embedded session (live cookies/headers/bodies)
+│   ├── flow.json       # ordered replay steps (indexes into session.har)
+│   ├── lesson.json     # redacted distillation of the recording
+│   ├── actions.js      # recorded UI steps (if the session had a UI flow)
+│   └── meta.json       # lesson name, source URL, host, timestamp
+└── scripts/
+    ├── replay_api.py       # replay the API flow with substituted knobs
+    ├── har_auth.py         # extract session cookies from the embedded HAR
+    ├── replay_ui.sh        # UI replay -> mp4 proof (optional)
+    ├── run_variant.js      # Playwright runner (skill-local profile)
+    ├── variant.js          # editable UI scaffold (recorded steps)
+    └── package.json        # playwright dependency
+```
+
+Everything resolves via the skill directory — no reference to `~/.web-lessons`
+or the `teach-web-actions` skill.
+
+## Primary action
+
+- Endpoint: `%%PRIMARY_ENDPOINT%%`
+- Action: %%ACTION_LABEL%%
+
+### Knobs
+
+%%KNOBS_LIST%%
+
+Pass these to `replay_api.py` with `--set NAME=VALUE` (query params and JSON
+body scalars are matched by name / dotted path). Example:
+
+```bash
+python3 scripts/replay_api.py %%SET_FLAGS_EXAMPLE%%
+```
+
+## Flow (`flow.json`)
+
+`api_steps` lists the requests replayed in order. Each references a HAR entry by
+`har_entry_index` (0-based into `data/session.har`), so `replay_api.py` reissues
+the exact recorded request with live cookies/headers, only swapping your knobs.
+
+%%FLOW_STEPS_TABLE%%
+
+`replay_api.py` reissues every step by default. Use `--only-primary` to run just
+the primary call. Mutating steps are refused unless `--confirm-mutating`.
+
+## Auth surface
+
+- Cookies used: %%COOKIE_NAMES%%
+- Auth headers used: %%AUTH_HEADER_NAMES%%
+
+Values live only in `data/session.har`; the replay reads them at call time and
+never prints them.
+
+## UI replay contract
+
+`variant.js` exports one async function; the runner supplies `page` (and a
+`params` object from `PW_PARAMS`):
+
+```js
+module.exports = async (page, params) => {
+  await page.goto("%%SOURCE_URL%%");
+  // ... recorded steps with your inputs ...
+};
+```
+
+`run_variant.js` launches a persistent Chrome context under a skill-local
+profile (`<skill>/.browser-profile`), injects the embedded session cookies via
+`har_auth.py`, records video, and closes the context (flushing the `.webm`).
+`replay_ui.sh` converts it to `runs/<timestamp>/proof.mp4`.
+
+Env: `PW_CHANNEL` (default `chrome`; `""` = bundled chromium), `PW_HEADLESS=1`,
+`PW_PARAMS` (JSON passed to the variant), `PW_PROFILE`, `PW_TIMEOUT` (ms).
+
+## Re-recording
+
+If the embedded session expires (401/403 on replay), re-record the action with
+the `teach-web-actions` skill and regenerate this skill.

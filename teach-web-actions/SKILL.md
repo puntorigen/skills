@@ -10,18 +10,22 @@ description: >-
   reports what actions were learned. Phase 3 performs a variation of the same
   action for a similar task — either by replaying the learned API calls with
   substituted parameters (e.g. a different date or destination) or by replaying
-  the UI navigation and recording an mp4 as proof. Use when the user asks to
-  teach/learn a website action, record or capture a browsing session, save
-  network activity to a HAR, "learn how this site does X", replay an action
-  with different parameters, or produce UI mp4 proof of a web flow.
+  the UI navigation and recording an mp4 as proof. Phase 4 (optional) turns a
+  recording into a standalone, shareable skill (Cursor personal/project or
+  skills.sh format) that performs one inferred action with the session (HAR)
+  embedded, so it works independently of this skill or the original recording.
+  Use when the user asks to teach/learn a website action, record or capture a
+  browsing session, save network activity to a HAR, "learn how this site does
+  X", replay an action with different parameters, produce UI mp4 proof of a web
+  flow, or generate/build a reusable skill from a recorded session.
 ---
 
 # Teach Web Actions
 
 Learn a website by watching the user do something once, then do a variation of
-it yourself. The skill has three phases; every phase is a script in this
-skill's `scripts/` directory, and **you** (the model) are the reasoning glue
-between them.
+it yourself — and optionally bottle that action into a standalone skill. The
+skill has four phases; every phase is a script in this skill's `scripts/`
+directory, and **you** (the model) are the reasoning glue between them.
 
 ```mermaid
 flowchart LR
@@ -34,6 +38,11 @@ flowchart LR
   subgraph apply [3. Apply]
     Lesson --> Api["API replay<br/>(new params)"]
     Lesson --> Ui["replay_ui.sh<br/>(mp4 proof)"]
+  end
+  subgraph gen [4. Generate skill]
+    Lesson --> GS["generate_skill.py"]
+    Har --> GS
+    GS --> Skill["standalone skill<br/>(embedded HAR)"]
   end
 ```
 
@@ -68,6 +77,14 @@ Copy this checklist and track progress:
 - [ ] 4. Confirm the variation the user wants (new params / different flow)
 - [ ] 5. Apply: API replay (data) or replay_ui.sh (mp4 proof)
 - [ ] 6. Report results; never print cookies/tokens
+```
+
+To instead package the recording as a reusable skill, do steps 1–3, then:
+
+```
+- [ ] 4b. Confirm skill name + install target (personal / project / skills.sh)
+- [ ] 5b. Generate: run generate_skill.py; relay any secret-scan warnings
+- [ ] 6b. Refine the auto-drafted SKILL.md triggers; report the skill path
 ```
 
 Resolve the skill directory (wherever it was installed) once:
@@ -183,6 +200,56 @@ bash "$SKILL_DIR/scripts/replay_ui.sh" "$LESSON_DIR" "$LESSON_DIR/variant.js"
    to the **review-mp4** skill to verify the flow and describe what happened,
    and embed/link the mp4 for the user.
 
+## Phase 4 — Generate a standalone skill
+
+Turn the recording into a **self-contained, shareable skill** that performs one
+inferred action. The generated skill embeds a trimmed HAR (the auth +
+prerequisite + result chain for that action) plus its own replay scripts, so it
+runs **without** this skill or the original `~/.web-lessons/` lesson.
+
+Confirm with the user first: the **primary action** to package, the **skill
+name**, and the **install target** (`cursor-personal` → `~/.cursor/skills/`,
+`cursor-project` → `./.cursor/skills/`, or `skills-sh` → a repo folder). Then:
+
+```bash
+python3 "$SKILL_DIR/scripts/generate_skill.py" "$LESSON_DIR" \
+  --name flight-search --format cursor-personal
+# or target an explicit path:
+python3 "$SKILL_DIR/scripts/generate_skill.py" "$LESSON_DIR" \
+  --output ~/.cursor/skills/flight-search
+```
+
+What it does (each step is its own script, see [REFERENCE.md](REFERENCE.md)):
+
+1. **`infer_flow.py`** picks the primary endpoint (top-ranked non-mutating,
+   data-bearing call; override with `--endpoint "GET host/path"`) and walks the
+   HAR to collect every prerequisite request up to and including it → `flow.json`.
+2. **`scan_secrets.py`** scans the HAR for credentials. It reports names and
+   locations only — **never values**. If it finds **CRITICAL** material
+   (payment cards, plaintext passwords/CVV/SSN, private keys), `generate_skill.py`
+   **stops**. Tell the user *what kind* was found and *where* (never the value);
+   re-run with `--allow-critical` only after they acknowledge, or ask them to
+   re-record without entering that data.
+3. **`trim_har.py`** writes the flow-scoped `data/session.har` (re-indexed to
+   match `flow.json`).
+4. It copies the replay tooling, then drafts `SKILL.md`, `REFERENCE.md`, and
+   `SECURITY.md`.
+
+Then **you** finish it:
+
+- Confirm the drafted `action_label` matches what the user demonstrated.
+- Tune the `SKILL.md` `description` triggers (site name, action verbs, example
+  params) so the skill is discovered when the user wants that action.
+- If a critical pre-call was dropped, re-run with `--endpoint` or hand-edit
+  `data/flow.json`.
+- Relay the secret-scan summary to the user, and point them at `SECURITY.md`
+  before they share the skill.
+
+The generated skill replays with `python3 scripts/replay_api.py --set knob=value`
+(reads run autonomously; mutating flows need `--confirm-mutating`) or, for a UI
+flow, `bash scripts/replay_ui.sh` (mp4 proof, using the embedded cookies). The
+original lesson can be archived afterward.
+
 ## Safety
 
 - **Secrets:** `session.har`, the browser profile, and `variant.js` can contain
@@ -200,6 +267,12 @@ bash "$SKILL_DIR/scripts/replay_ui.sh" "$LESSON_DIR" "$LESSON_DIR/variant.js"
   target site's terms.
 - **One lesson, one host.** Don't reuse a lesson's payloads against a different
   site.
+- **Generated skills embed live credentials.** A Phase 4 skill's
+  `data/session.har` carries the recorded session's cookies/tokens. Its
+  `SECURITY.md` spells out the rules: safe to share privately with people
+  already trusted with that account, but never publish publicly without first
+  rotating/expiring the credentials. Always relay the secret scan; never echo a
+  value. Do not proceed past a CRITICAL finding without the user's acknowledgment.
 
 ## Anti-patterns
 
@@ -211,9 +284,12 @@ bash "$SKILL_DIR/scripts/replay_ui.sh" "$LESSON_DIR" "$LESSON_DIR/variant.js"
 - Hardcoding one endpoint's payload for a different site or a different action.
 - Skipping the "tell the user exactly what to demonstrate" step — a vague
   recording yields a vague lesson.
+- Publishing a generated skill publicly without rotating the embedded session,
+  or ignoring a CRITICAL secret-scan finding.
 
 ## Resources
 
-- HAR anatomy, the `lesson.json` schema, parameter-detection and auth
-  heuristics, and video-conversion details: [REFERENCE.md](REFERENCE.md)
+- HAR anatomy, the `lesson.json` and `flow.json` schemas, parameter-detection
+  and auth heuristics, generated-skill layout, the secret-scan severity levels,
+  and video-conversion details: [REFERENCE.md](REFERENCE.md)
 - Verifying and describing the replay mp4: the **review-mp4** skill.
