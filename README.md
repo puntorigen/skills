@@ -148,7 +148,8 @@ lesson, then replay the action with different parameters or record UI proof.
 npx skills add puntorigen/skills@generate-web-skills -g -y
 ```
 
-**Requires:** Node.js, Google Chrome, python3, ffmpeg (for mp4 proof).
+**Requires:** Node.js, Google Chrome, python3, ffmpeg (for mp4 proof). See
+[generate-web-skills/README.md](generate-web-skills/README.md).
 
 ---
 
