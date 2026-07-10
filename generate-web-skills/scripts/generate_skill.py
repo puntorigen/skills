@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Phase 4 of teach-web-actions: generate a self-contained web-action skill.
+"""Phase 4 of generate-web-skills: generate a self-contained web-action skill.
 
 Turns a distilled lesson (~/.web-lessons/<host>/<lesson>/) into a standalone,
 shareable skill directory that performs ONE primary action — including every
 recorded prerequisite step — with the session (HAR) embedded. The output has no
-runtime dependency on teach-web-actions or the original lesson.
+runtime dependency on generate-web-skills or the original lesson.
 
 Pipeline (delegates to sibling scripts):
   infer_flow.py  -> flow.json (primary + prerequisite chain)
@@ -307,7 +307,7 @@ def build_sharing_rules(all_stripped):
         "(log out the recorded session, revoke tokens) or re-record against a "
         "throwaway account. Or regenerate `--with-setup` so no login ships.\n"
         "- Sessions expire. When replay starts returning 401/403, the embedded "
-        "session is dead — re-record with `teach-web-actions` and regenerate.")
+        "session is dead — re-record with `generate-web-skills` and regenerate.")
 
 
 def build_setup_reference(setup_hosts):

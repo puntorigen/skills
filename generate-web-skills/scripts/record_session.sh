@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 1 of teach-web-actions: record a user-driven Chrome session.
+# Phase 1 of generate-web-skills: record a user-driven Chrome session.
 #
 # Opens Chrome via `playwright codegen` under a persistent profile and captures:
 #   - session.har   all network activity (JSON HAR)

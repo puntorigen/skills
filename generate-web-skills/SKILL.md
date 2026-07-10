@@ -1,5 +1,5 @@
 ---
-name: teach-web-actions
+name: generate-web-skills
 description: >-
   Teach the agent how a website works by recording a real user-driven Chrome
   session, then replay the learned action with different inputs. Phase 1
@@ -20,7 +20,7 @@ description: >-
   flow, or generate/build a reusable skill from a recorded session.
 ---
 
-# Teach Web Actions
+# Generate Web Skills
 
 Learn a website by watching the user do something once, then do a variation of
 it yourself — and optionally bottle that action into a standalone skill. The
@@ -92,7 +92,7 @@ To instead package the recording as a reusable skill, do steps 1–3, then:
 Resolve the skill directory (wherever it was installed) once:
 
 ```bash
-SKILL_DIR="<the folder this SKILL.md lives in>"   # e.g. .cursor/skills/teach-web-actions
+SKILL_DIR="<the folder this SKILL.md lives in>"   # e.g. .cursor/skills/generate-web-skills
 ```
 
 ## Phase 1 — Record (teach mode)

@@ -127,7 +127,7 @@ async function main() {
   const har = {
     log: {
       version: "1.2",
-      creator: { name: "teach-web-actions-setup", version: "1.0" },
+      creator: { name: "generate-web-skills-setup", version: "1.0" },
       entries: [entry],
     },
   };

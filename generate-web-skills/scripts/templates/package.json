@@ -2,7 +2,7 @@
   "name": "web-action-skill-scripts",
   "version": "1.0.0",
   "private": true,
-  "description": "Playwright UI-replay runner for a generated web-action skill (teach-web-actions).",
+  "description": "Playwright UI-replay runner for a generated web-action skill (generate-web-skills).",
   "dependencies": {
     "playwright": "^1.61.0"
   }

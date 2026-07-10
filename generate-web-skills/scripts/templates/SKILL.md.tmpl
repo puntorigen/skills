@@ -9,7 +9,7 @@ description: >-
 Perform "%%ACTION_LABEL%%" on `%%HOST%%` by replaying a recorded browser
 session with your own parameters. This skill is **self-contained**: the session
 it needs (cookies, headers, request bodies) is embedded under `data/`, so it
-works without the `teach-web-actions` skill or the original recording.
+works without the `generate-web-skills` skill or the original recording.
 
 - Recorded from: %%SOURCE_URL%%
 - Primary call: `%%PRIMARY_ENDPOINT%%`
@@ -66,7 +66,7 @@ The recorded chain this skill replays, in order:
 - State-changing steps (POST/PUT/PATCH/DELETE) require `--confirm-mutating` and
   explicit user approval before replay.
 - This skill reuses the session that was recorded; it does not bypass auth. If
-  the embedded session expires, re-record with the `teach-web-actions` skill.
+  the embedded session expires, re-record with the `generate-web-skills` skill.
 
 ## Reference
 

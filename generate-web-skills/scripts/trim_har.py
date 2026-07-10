@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 4c of teach-web-actions: trim a HAR down to the primary-action flow.
+"""Phase 4c of generate-web-skills: trim a HAR down to the primary-action flow.
 
 Given a lesson dir with session.har + flow.json, writes:
   - a trimmed HAR containing ONLY the entries referenced by flow.json's
@@ -84,7 +84,7 @@ def main():
     trimmed_har = {
         "log": {
             "version": log.get("version", "1.2"),
-            "creator": log.get("creator", {"name": "teach-web-actions",
+            "creator": log.get("creator", {"name": "generate-web-skills",
                                            "version": "1.0"}),
             "entries": trimmed_entries,
         }

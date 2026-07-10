@@ -1,7 +1,7 @@
 # %%TITLE%% — Reference
 
 Background for [SKILL.md](SKILL.md): what this generated skill bundles, how
-replay works, and the recorded flow. Generated from a `teach-web-actions`
+replay works, and the recorded flow. Generated from a `generate-web-skills`
 lesson recorded on `%%HOST%%`.
 
 ## Bundle layout
@@ -27,7 +27,7 @@ lesson recorded on `%%HOST%%`.
 ```
 
 Everything resolves via the skill directory — no reference to `~/.web-lessons`
-or the `teach-web-actions` skill.
+or the `generate-web-skills` skill.
 
 Skills generated `--with-setup` also ship `scripts/setup.sh` +
 `scripts/setup_login.js` and `data/auth_accounts.json`; each user's captured
@@ -92,4 +92,4 @@ Env: `PW_CHANNEL` (default `chrome`; `""` = bundled chromium), `PW_HEADLESS=1`,
 ## Re-recording
 
 If the embedded session expires (401/403 on replay), re-record the action with
-the `teach-web-actions` skill and regenerate this skill.
+the `generate-web-skills` skill and regenerate this skill.

@@ -1,4 +1,4 @@
-# Teach Web Actions — Reference
+# Generate Web Skills — Reference
 
 Background for [SKILL.md](SKILL.md): the artifacts each phase writes, the HAR
 shape, how `process_har.py` decides what to keep, how parameter knobs and the
@@ -335,7 +335,7 @@ The ordered chain needed to perform the primary action, prerequisites included.
 skill was generated `--with-setup`. Each user's captured login is written to
 `data/user-auth.<host>.har` at setup time (gitignored, never committed).
 
-Nothing references `~/.web-lessons` or `teach-web-actions`; the skill is
+Nothing references `~/.web-lessons` or `generate-web-skills`; the skill is
 independent. `generate_skill.py --format` chooses the default output path
 (`cursor-personal` / `cursor-project` / `skills-sh`); `--output` overrides it.
 By default the skill is auto-invocable; `--explicit-only` sets
@@ -444,7 +444,7 @@ slug). At replay:
 | Chrome profile "already in use" | A codegen/replay session is still open on the same profile. Close it first. |
 | `generate_skill.py` refuses (CRITICAL secrets) | Card/password/SSN/private-key material in the HAR. Warn the user (names/locations only), then pass `--allow-critical`, or re-record without entering that data. |
 | Wrong primary action packaged | Pass `--endpoint "METHOD host/path"` (or `--label`) to `generate_skill.py` / `infer_flow.py`, or hand-edit `data/flow.json`. |
-| Generated skill replay returns 401/403 | The embedded session expired. Re-record with `teach-web-actions` and regenerate the skill. |
+| Generated skill replay returns 401/403 | The embedded session expired. Re-record with `generate-web-skills` and regenerate the skill. |
 | `infer_flow.py`: "primary endpoint not found in session.har" | `lesson.json` is stale. Re-run `process_har.py`, then `infer_flow.py`. |
 | `--with-setup` errors "no auth accounts were detected" | The flow has no logged-in host (anonymous action). Generate without `--with-setup`. |
 | Setup-skill replay says "setup required" | The user hasn't captured a login yet. Run `bash scripts/setup.sh` (or `--skip-setup-check` to use only the shipped session). |

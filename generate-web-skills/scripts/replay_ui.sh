@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 3 (UI mode) of teach-web-actions: replay a variant of the recorded UI
+# Phase 3 (UI mode) of generate-web-skills: replay a variant of the recorded UI
 # flow, record video, and convert it to mp4 proof.
 #
 # Usage:  replay_ui.sh <lesson-dir> <variant.js>

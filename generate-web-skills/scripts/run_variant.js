@@ -1,4 +1,4 @@
-// Runner for a teach-web-actions UI variant.
+// Runner for a generate-web-skills UI variant.
 //
 // Launches a persistent Chrome context (reusing the teaching profile so logins
 // carry over), records video, then runs a variant module that exports a single

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 4b of teach-web-actions: scan a HAR for embedded credentials/secrets.
+"""Phase 4b of generate-web-skills: scan a HAR for embedded credentials/secrets.
 
 Reports what sensitive material a HAR carries so the agent can warn the user
 before bundling it into a shareable skill. It classifies findings by severity

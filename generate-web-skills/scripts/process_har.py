@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 2 of teach-web-actions: distill a recorded HAR into a reusable lesson.
+"""Phase 2 of generate-web-skills: distill a recorded HAR into a reusable lesson.
 
 Reads <lesson-dir>/session.har (+ optional actions.js, meta.json) and writes:
   - lesson.json  machine-readable endpoints, payloads, parameter knobs, auth

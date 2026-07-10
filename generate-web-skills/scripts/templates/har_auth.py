@@ -13,7 +13,7 @@ credentials were stripped and each user captures their own via setup.sh into
 top of the shipped HAR (both for UI cookies and, via AuthOverlay, for API
 replay headers).
 
-Self-contained: stdlib only, no dependency on teach-web-actions. It never logs
+Self-contained: stdlib only, no dependency on generate-web-skills. It never logs
 cookie or token values.
 
 Usage (UI replay):  har_auth.py [<session.har>] [--out cookies.json] [--overlay-setup]

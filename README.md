@@ -139,13 +139,13 @@ npx skills add puntorigen/skills@object-to-3d -g -y
 
 ---
 
-### teach-web-actions
+### generate-web-skills
 
 Record a real Chrome session (HAR + UI steps), distill it into a reusable
 lesson, then replay the action with different parameters or record UI proof.
 
 ```bash
-npx skills add puntorigen/skills@teach-web-actions -g -y
+npx skills add puntorigen/skills@generate-web-skills -g -y
 ```
 
 **Requires:** Node.js, Google Chrome, python3, ffmpeg (for mp4 proof).
@@ -334,7 +334,7 @@ skills/
 ├── talking-head/
 ├── video-to-splat/
 ├── object-to-3d/
-├── teach-web-actions/
+├── generate-web-skills/
 ├── edit-docx/
 ├── pdf-documents/
 ├── j-space/

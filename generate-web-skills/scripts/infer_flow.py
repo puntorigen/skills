@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 4a of teach-web-actions: infer the primary action + prerequisite chain.
+"""Phase 4a of generate-web-skills: infer the primary action + prerequisite chain.
 
 Reads a lesson directory (needs lesson.json + session.har, optional actions.js)
 and writes flow.json: the ordered list of HAR requests needed to perform ONE

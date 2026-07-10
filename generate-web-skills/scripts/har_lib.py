@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Shared HAR parsing, filtering, redaction, and knob-detection helpers.
 
-Used by the teach-web-actions pipeline:
+Used by the generate-web-skills pipeline:
   - process_har.py  (Phase 2 distillation)
   - infer_flow.py   (Phase 4 primary-action + prerequisite chain)
   - scan_secrets.py (Phase 4 credential scan)
