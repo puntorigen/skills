@@ -42,24 +42,12 @@ That's it. From then on, the new skill answers the request directly, no re-disco
 
 Four phases. Every phase is a script in [`scripts/`](scripts/), and the agent is the reasoning glue between them.
 
-```mermaid
-flowchart LR
-  subgraph teach [1. Teach]
-    Rec["record_session.sh<br/>you drive Chrome"] --> Har["session.har + actions.js"]
-  end
-  subgraph distill [2. Distill]
-    Har --> Proc["process_har.py"] --> Lesson["lesson.json + LESSON.md"]
-  end
-  subgraph apply [3. Apply]
-    Lesson --> Api["API replay<br/>(new params)"]
-    Lesson --> Ui["replay_ui.sh<br/>(mp4 proof)"]
-  end
-  subgraph gen [4. Generate]
-    Lesson --> GS["generate_skill.py"]
-    Har --> GS
-    GS --> Skill["standalone skill<br/>(embedded session)"]
-  end
-```
+![Pipeline: Teach (record_session.sh) to Distill (process_har.py) to Apply (API/UI replay) to Generate (generate_skill.py to a standalone skill)](assets/pipeline.png)
+
+<!-- Diagram source: assets/pipeline.mmd — re-render with:
+     npx -y @mermaid-js/mermaid-cli -i assets/pipeline.mmd -o assets/pipeline.png -b white -s 3 -->
+
+
 
 1. **Teach** — you perform the action once in Chrome; it captures all network activity and the UI steps.
 2. **Distill** — it drops noise, keeps the real XHR/fetch/document calls, and extracts the parameter knobs and auth surface.

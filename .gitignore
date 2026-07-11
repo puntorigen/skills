@@ -37,6 +37,12 @@ config.json
 !assets/*.png
 !assets/*.mp4
 
+# Per-skill committed doc assets (diagrams/screenshots in any <skill>/assets/)
+!**/assets/
+!**/assets/*.png
+!**/assets/*.svg
+!**/assets/*.mp4
+
 # OS & editor
 .DS_Store
 Thumbs.db
