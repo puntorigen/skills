@@ -23,6 +23,13 @@
       ]
     },
     {
+      "title": "Web app UX",
+      "description": "Add a production-grade onboarding layer to a Next.js app or admin panel — a first-login welcome wizard, re-launchable guided product tours (driver.js), task-based quick actions, an in-app help center, and a floating help button, with per-user persistence.",
+      "skills": [
+        "nextjs-onboarding-tours"
+      ]
+    },
+    {
       "title": "Documents",
       "description": "Read, edit, and create office documents locally — Word and PDF — while preserving formatting.",
       "skills": [

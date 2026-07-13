@@ -153,6 +153,23 @@ npx skills add puntorigen/skills@generate-web-skills -g -y
 
 ---
 
+### nextjs-onboarding-tours
+
+Add a complete, task-oriented onboarding layer to any Next.js app or admin panel
+— a first-login welcome wizard, re-launchable guided tours per area (driver.js),
+dashboard quick actions, an in-app help center, and a floating help button, with
+per-user persistence. Everything auto-shows at most once and stays one click away.
+
+```bash
+npx skills add puntorigen/skills@nextjs-onboarding-tours -g -y
+```
+
+**Requires:** a Next.js app (App Router; great with Payload CMS admin, NextAuth,
+or a custom auth context). Adds `driver.js` (~5 kB) via pnpm — no models, no cloud,
+no API keys.
+
+---
+
 ### edit-docx
 
 Inspect and edit Microsoft Word `.docx` files while preserving formatting,
@@ -336,6 +353,7 @@ skills/
 ├── video-to-splat/
 ├── object-to-3d/
 ├── generate-web-skills/
+├── nextjs-onboarding-tours/
 ├── edit-docx/
 ├── pdf-documents/
 ├── j-space/
